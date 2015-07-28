@@ -1,0 +1,9 @@
+These tools are here to help automatically reset the BBB and to boot a raw
+image over its serial connection.
+
+
+bbb_reset uses the GPIO pins on a master BBB and some custom hardware
+I made to reset a slave BBB upon which I'm testing the code.
+
+bbb_boot uses sx and the XMODEM-CRC protocol to download the _initial_
+kernel image to the BBB. 
