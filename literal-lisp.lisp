@@ -66,6 +66,12 @@
 (defun while-body (ast)
   (cddr ast))
 
+;; setf form
+(defun setf-place (ast)
+  (second ast))
+(defun setf-newval (ast)
+  (third ast))
+
 (defparameter *inst* nil)
 (defun ast->3ac (ast)
   (if (atom ast)
@@ -129,7 +135,7 @@
          (push `(goto ,(label ast)) *inst*))
 
 
-        (<- ;; copy
+        (<- ;; copy from one variable to another
          ;; this is not a pointer assignment or reference, it is just a copy
          (push `(,(dest ast) = ,(source ast)) *inst*))
 
@@ -150,11 +156,13 @@
                (ast->3ac `(l ,else-label))
                (when (> (length ast) 3)
                  (let ((eid (ast->3ac (if-else ast))))
-                   (ast->3ac `(<- ,result-name ,eid))))
+                   ;; and now copy the contructed value to the known return
+                   ;; variable
+                   (ast->3ac `(setf ,result-name ,eid))))
                (ast->3ac `(l ,endif-label))))
            result-name))
 
-        (defun
+        (defun ;; define a non-closure function
             (ast->3ac `(l ,(func-name ast)))
             (push `(begin-func ,(length (func-params ast))) *inst*)
           (let ((result-var (apply #'ast->3ac (func-body ast))))
@@ -178,8 +186,9 @@
                 while-result)))
 
         (setf
-         ;; implement me
-         nil)
+         (if (symbolp (setf-place ast))
+             (ast->3ac `(<- ,(setf-place ast) ,(ast->3ac (setf-newval ast))))
+             (error "implement setf for form places!")))
 
         (aref
          ;; implement me
