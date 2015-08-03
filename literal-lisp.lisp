@@ -2,8 +2,7 @@
 
 ;;;; This is another prototype of a compiler for a dialect called literal-lisp
 ;;;; which is heavily C-like in its nature. So far, this only describes a
-;;;; translation of it to three address code.
-
+;;;; translation of it to three address code. It is similar to prescheme.
 
 (defun inbase (num &optional (base :d))
   (ecase base
@@ -25,6 +24,10 @@
   (third form))
 (defun arg3+ (form)
   (cdddr form))
+
+;; progn
+(defun progn-body (ast)
+  (cdr ast))
 
 ;; labels
 (defun label (form)
@@ -72,7 +75,25 @@
 (defun setf-newval (ast)
   (third ast))
 
+;; block form
+(defun block-name (ast)
+  (second ast))
+(defun block-body (ast)
+  (cddr ast))
+
+;; return-from form
+(defun return-from-name (ast)
+  (second ast))
+(defun return-from-value (ast)
+  (third ast))
+
+(defparameter *block-hack* nil)
+
 (defparameter *inst* nil)
+
+(defun emit3ac (form)
+  (push form *inst*))
+
 (defun ast->3ac (ast)
   (if (atom ast)
       (cond
@@ -87,9 +108,13 @@
         ('progn ;; sequencing operator, last expr is value.
           ;; return the label to the last thing processed.
           (let ((last-one nil))
-            (loop for f in ast do (setf last-one (ast->3ac f)))
+            (loop for f in (progn-body ast) do
+                 (let ((var (gensym "T")))
+                   (emit3ac `(,var = ,(ast->3ac f)))
+                   (setf last-one var)))
             last-one))
 
+        ;; TODO: The relational operators are wrong when using multiple args
         ((+ * - / < > <= >= = /=) ;; left associative simple operators
          (if (> (length ast) 3)
              ;; reduce the left associative operator across the list.
@@ -102,42 +127,41 @@
                ;; the base primitive 2 argument operator form (op and 2 nums)
                (cond
                  ((= (length ast) 3)
-                  (push `(,name = ,(ast->3ac (second ast))
-                                ,(first ast)
-                                ,(ast->3ac (third ast)))
-                        *inst*)
+                  (emit3ac `(,name = ,(ast->3ac (second ast))
+                                   ,(first ast)
+                                   ,(ast->3ac (third ast))))
                   name)
                  ;; handle uanary case (the op and the number)
                  ((= (length ast) 2)
                   (case (op ast)
                     (+
-                     (push `(,name = 0 + ,(ast->3ac (arg1 ast))) *inst*))
+                     (emit3ac `(,name = 0 + ,(ast->3ac (arg1 ast)))))
                     (-
-                     (push `(,name = 0 - ,(ast->3ac (arg1 ast))) *inst*))
+                     (emit3ac `(,name = 0 - ,(ast->3ac (arg1 ast)))))
                     (*
-                     (push `(,name = 1 * ,(ast->3ac (arg1 ast))) *inst*))
+                     (emit3ac `(,name = 1 * ,(ast->3ac (arg1 ast)))))
                     (/
-                     (push `(,name = 1 / ,(ast->3ac (arg1 ast))) *inst*))
+                     (emit3ac `(,name = 1 / ,(ast->3ac (arg1 ast)))))
                     ((< > <= >= = /=)
                      ;; transform, but ignore, whatever value is
                      ;; there, and return T
-                     (push `(,(gensym "T") = ,(ast->3ac (arg1 ast))) *inst*)
-                     (push `(,name = T) *inst*)
+                     (emit3ac `(,(gensym "T") = ,(ast->3ac (arg1 ast))))
+                     (emit3ac `(,name = T))
                      name)))
                  (t
                   (error "figure out what is wrong here in binop."))))))
 
 
         (l ;; label
-         (push `(label ,(label ast)) *inst*))
+         (emit3ac `(label ,(label ast))))
 
         (goto ;; goto
-         (push `(goto ,(label ast)) *inst*))
+         (emit3ac `(goto ,(label ast))))
 
 
         (<- ;; copy from one variable to another
          ;; this is not a pointer assignment or reference, it is just a copy
-         (push `(,(dest ast) = ,(source ast)) *inst*))
+         (emit3ac `(,(dest ast) = ,(source ast))))
 
         (if ;; (if cond-expr then &optional else)
          (let* ((id (symbol-name (gensym "ID")))
@@ -149,25 +173,87 @@
            (ast->3ac `(l ,if-start))
 
            (let ((cid (ast->3ac (if-cond ast))))
-             (push `(if (= ,cid NIL) (goto ,else-label)) *inst*)
+             (emit3ac `(if (= ,cid NIL) (goto ,else-label)))
              (let ((tid (ast->3ac (if-then ast))))
                (ast->3ac `(<- ,result-name ,tid))
                (ast->3ac `(goto ,endif-label))
                (ast->3ac `(l ,else-label))
-               (when (> (length ast) 3)
-                 (let ((eid (ast->3ac (if-else ast))))
-                   ;; and now copy the contructed value to the known return
-                   ;; variable
-                   (ast->3ac `(setf ,result-name ,eid))))
+               (if (> (length ast) 3)
+                   (let ((eid (ast->3ac (if-else ast))))
+                     ;; and now copy the contructed value to the known return
+                     ;; variable
+                     (ast->3ac `(setf ,result-name ,eid)))
+                   ;; if there is no else, but we are here, then the
+                   ;; result if the if expression is NIL
+                   (ast->3ac `(setf ,result-name nil)))
+
                (ast->3ac `(l ,endif-label))))
            result-name))
 
+        ;; TODO: BROKEN WITHOUT REAL SYMBOL TABLE. (no shadowing, etc.)
+        ;; TODO, using the scoped name of the block, goto the right label.
+        (return-from  ;; used in BLOCKs and other such things.
+         (unless (eq (return-from-name ast) (first (first *block-hack*)))
+           (error "Fragile return-from broken!"))
+          (let ((retvar (second (first *block-hack*)))) ;; TODO: Damn
+            ;; dirty hack.
+            (emit3ac `(,retvar  = ,(ast->3ac (return-from-value ast))))
+            (emit3ac `(goto ,(third (first *block-hack*))))
+            retvar))
+
+        ;; TODO: BROKEN WITHOUT REAL SYMBOL TABLE (no real symbol table)
+        (block ;; create a named environment by which a return-from may exit.
+            ;; the name must be in the symbol table somewhere and it has the
+            ;; exit label I made in here associated with it. It also needs
+            ;; the name of the final variable that represents the block's
+            ;; value.
+            (let* ((last-one nil)
+                   (id (symbol-name (gensym "ID")))
+                   (result-var (gensym "T"))
+                   (start-of-block
+                    (gensym (concatenate 'string "BLOCKSTART_" id "_")))
+                   (end-of-block
+                    (gensym (concatenate 'string "BLOCKEND_" id "_"))))
+
+              (ast->3ac `(l ,start-of-block))
+
+              ;; TODO: A damn dirty hack just for testing. we push
+              ;; this name and associated info onto a list so we can
+              ;; see it in return-from. We assume the return-from will
+              ;; ask for the nearest block name always, this in in
+              ;; violation of ansi and should be fixed when we get a
+              ;; real sym table.
+              (push (list (block-name ast) result-var end-of-block)
+                    *block-hack*)
+
+              (loop for f in (block-body ast) do
+                   (let ((var (gensym "T")))
+                     (emit3ac `(,var = ,(ast->3ac f)))
+                     (setf last-one var)))
+
+              (emit3ac `(,result-var = ,last-one))
+
+              (ast->3ac `(l ,end-of-block))
+
+              result-var))
+
+        ;; TODO: The BLOCK rewrite here in the DEFUN should happen in
+        ;; an earlier compiler phase (along with shoving the block
+        ;; data into the block appropriate symbol table.
+
         (defun ;; define a non-closure function
             (ast->3ac `(l ,(func-name ast)))
-            (push `(begin-func ,(length (func-params ast))) *inst*)
-          (let ((result-var (apply #'ast->3ac (func-body ast))))
-            (push `(return ,result-var) *inst*)
-            (push `(end-func) *inst*)))
+            (emit3ac `(begin-func ,(length (func-params ast))))
+          (let ((result-var
+                 (ast->3ac `(block ,(func-name ast) ,@(func-body ast)))))
+
+            (emit3ac `(return ,result-var))
+            (emit3ac `(end-func))
+
+            ;; and return my name, which is sort of like a variable.
+            ;; TODO; Not working properly yet. No symbol interning.
+            #+ignore (func-name ast)
+            t))
 
         (while ;; unlisp-like, but easier to implement than DO fo rnow.
             (let* ((id (symbol-name (gensym "ID")))
@@ -176,16 +262,16 @@
                    (while-result (gensym "T")))
               (ast->3ac `(l ,while-start))
               (let ((cid (ast->3ac (while-cond ast))))
-                (push `(if (= ,cid NIL) (goto ,while-end)) *inst*)
+                (emit3ac `(if (= ,cid NIL) (goto ,while-end)))
                 ;; we don't save the result of the body anywhere.
                 (apply #'ast->3ac (while-body ast))
                 (ast->3ac `(goto ,while-start))
                 ;; now emit the value to compute when the while is done.
                 (ast->3ac `(l ,while-end))
-                (push `(,while-result = ,(ast->3ac (while-result ast))) *inst*)
+                (emit3ac `(,while-result = ,(ast->3ac (while-result ast))))
                 while-result)))
 
-        (setf
+        (setf ;; make the place evaluate to newval.
          (if (symbolp (setf-place ast))
              (ast->3ac `(<- ,(setf-place ast) ,(ast->3ac (setf-newval ast))))
              (error "implement setf for form places!")))
@@ -201,10 +287,10 @@
          (let ((argvars (mapcar #'ast->3ac (args ast)))
                (retvar (gensym "T")))
            (loop for i in argvars do
-                (push `(push-param ,i) *inst*))
-           (push `(,retvar = call ,(iname ast) ,(length (args ast))) *inst*)
-           (unless (length (args ast))
-             (push `(pop-params ,(length (args ast))) *inst*))
+                (emit3ac `(push-param ,i)))
+           (emit3ac `(,retvar = call ,(iname ast) ,(length (args ast))))
+           (unless (zerop (length (args ast)))
+             (emit3ac `(pop-params ,(length (args ast)))))
            retvar))
 
 
