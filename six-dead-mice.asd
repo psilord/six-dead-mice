@@ -16,4 +16,5 @@
                 (:file "lisp-object")
                 (:file "characters-dictionary")
                 (:file "reader-dictionary")
+                (:file "literal-lisp")
                 (:file "six-dead-mice")))
