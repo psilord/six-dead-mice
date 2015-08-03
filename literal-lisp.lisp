@@ -109,6 +109,7 @@
           ;; return the label to the last thing processed.
           (let ((last-one nil))
             (loop for f in (progn-body ast) do
+                 ;; TODO: Broken for labels.
                  (let ((var (gensym "T")))
                    (emit3ac `(,var = ,(ast->3ac f)))
                    (setf last-one var)))
