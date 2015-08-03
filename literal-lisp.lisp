@@ -191,7 +191,8 @@
            result-name))
 
         ;; TODO: BROKEN WITHOUT REAL SYMBOL TABLE. (no shadowing, etc.)
-        ;; TODO, using the scoped name of the block, goto the right label.
+        ;;
+        ;; using the scoped name of the block, goto the right label to exit.
         (return-from  ;; used in BLOCKs and other such things.
          (unless (eq (return-from-name ast) (first (first *block-hack*)))
            (error "Fragile return-from broken!"))
@@ -234,6 +235,9 @@
               (emit3ac `(,result-var = ,last-one))
 
               (ast->3ac `(l ,end-of-block))
+
+              ;; TODO: HACK! and remove the block out of the scope.
+              (pop *block-hack*)
 
               result-var))
 
