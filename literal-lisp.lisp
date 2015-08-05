@@ -18,11 +18,13 @@
 ;; function applications of primitive functions. (+ 1 2 3) etc.
 (defun op (form)
   (first form))
-(defun arg1 (form)
+(defun op-args (form)
+  (cdr form))
+(defun op-arg1 (form)
   (second form))
-(defun arg2 (form)
+(defun op-arg2 (form)
   (third form))
-(defun arg3+ (form)
+(defun op-arg3+ (form)
   (cdddr form))
 
 ;; (progn 1 2 3 4)
@@ -123,14 +125,68 @@ a values of either: variable assigned and T, or nil and nil."
                 (values last-one t)
                 (values nil nil))))
 
-        ;; TODO: The relational operators are wrong when using multiple args
-        ((+ * - / < > <= >= = /=) ;; left associative simple operators
+        ;; These are processed differently than the artihmetic operators.
+        ;; TODO: I may have to synthesize <= >= /= from < > =... currently
+        ;; I don't.
+        ((< > <= >= = /=)
+         ;; We DO short circuit the relation operators! And we are careful not
+         ;; to perform multiple evaluations and do left to right execution
+         ;; when there are appropriate expressions to compute.
+         (cond
+           ;; 3 or more arguments to the relop, perform a manual reduction
+           ;; including short circuiting.
+           ((> (length ast) 3)
+            (let* ((id (symbol-name (gensym "ID")))
+                   (rel-start (gensym (concatenate 'string "RELSTART_" id "_")))
+                   (rel-done (gensym (concatenate 'string "RELDONE_" id "_")))
+                   (and-var (gensym "T"))
+                   v1)
+              ;; slide across the arguments, computing the value of each one
+              ;; once. Then if the relational operator fails, jmp to the end
+              ;; of the relational expression.
+              (ast->3ac `(l ,rel-start)) ;; for notation.
+              (setf v1 (ast->3ac (op-arg1 ast)))
+              (loop for i in (cdr (op-args ast))
+                 for c from 1 by 1 ;; we already considered one argument...
+                 with l = (length (op-args ast)) do
+                   (let ((v2 (ast->3ac i)))
+                     (emit3ac `(,and-var = ,v1 ,(op ast) ,v2))
+                     ;; don't emit the last short circuit jmp which would just
+                     ;; go to the next instruction.
+                     (unless (= c (1- l))
+                       (emit3ac `(if (= ,and-var nil) (goto ,rel-done))))
+                     (setf v1 v2)))
+              (emit3ac `(l ,rel-done))
+              (values and-var t)))
+
+           ;; exactly 2 args to the relop.
+           ((= (length ast) 3)
+            (let ((relvar (gensym "T")))
+              (emit3ac `(,relvar = ,(ast->3ac (op-arg1 ast))
+                                 ,(op ast)
+                                 ,(ast->3ac (op-arg2 ast))))
+              (values relvar t)))
+
+           ;; exactly 1 arg to the relop (always true, but compute the result).
+           ((= (length ast) 2)
+            (let ((result (gensym "T"))
+                  (relvar (gensym "T")))
+              (emit3ac `(,result = ,(ast->3ac (op-arg1 ast))))
+              (emit3ac `(,relvar = t))
+              (values relvar t)))
+
+           ;; a useless error message.
+           (t
+            (error "Relop 3ac code processing gone wrong!"))))
+
+
+        ((+ * - /) ;; left associative simple operators
          (if (> (length ast) 3)
              ;; reduce the left associative operator across the list.
              (ast->3ac
               `(,(op ast)
-                 ,(ast->3ac (list (op ast) (arg1 ast) (arg2 ast)))
-                 ,@(arg3+ ast)))
+                 ,(ast->3ac (list (op ast) (op-arg1 ast) (op-arg2 ast)))
+                 ,@(op-arg3+ ast)))
 
              (let ((name (gensym "T")))
                ;; the base primitive 2 argument operator form (op and 2 nums)
@@ -140,23 +196,20 @@ a values of either: variable assigned and T, or nil and nil."
                                    ,(first ast)
                                    ,(ast->3ac (third ast))))
                   (values name t))
-                 ;; handle uanary case (the op and the number)
+                 ;; handle unary case (the op and the number)
                  ((= (length ast) 2)
                   (case (op ast)
-                    (+
-                     (emit3ac `(,name = 0 + ,(ast->3ac (arg1 ast)))))
-                    (-
-                     (emit3ac `(,name = 0 - ,(ast->3ac (arg1 ast)))))
-                    (*
-                     (emit3ac `(,name = 1 * ,(ast->3ac (arg1 ast)))))
-                    (/
-                     (emit3ac `(,name = 1 / ,(ast->3ac (arg1 ast)))))
+                    ((+ -)
+                     (emit3ac `(,name = 0 ,(op ast) ,(ast->3ac (op-arg1 ast)))))
+                    ((* /)
+                     (emit3ac `(,name = 1 ,(op ast) ,(ast->3ac (op-arg1 ast)))))
                     ((< > <= >= = /=)
                      ;; transform, but ignore, whatever value is
                      ;; there, and return T
-                     (emit3ac `(,(gensym "T") = ,(ast->3ac (arg1 ast))))
-                     (emit3ac `(,name = T))
-                     (values name t))))
+                     (emit3ac `(,(gensym "T") = ,(ast->3ac (op-arg1 ast))))))
+                  ;; and return the name we used for this expression.
+                  (values name t))
+
                  (t
                   (error "figure out what is wrong here in binop."))))))
 
