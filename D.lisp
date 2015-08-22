@@ -1,8 +1,9 @@
-(in-package :six-dead-mice)
+(in-package :lang-d)
 
 ;;;; This is another prototype of a compiler for a dialect called literal-lisp
 ;;;; which is heavily C-like in its nature. So far, this only describes a
 ;;;; translation of it to three address code. It is similar to prescheme.
+;;;; It is flawed because I don't deal with the environment carefully enough.
 
 (defparameter *block-hack* nil)
 

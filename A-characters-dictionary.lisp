@@ -1,4 +1,4 @@
-(in-package #:six-dead-mice)
+(in-package #:lang-a)
 
 ;; This is a STREAMS concept. In SDM, all streams are unsigned 8 bit oriented.
 (defstruct byte-buffer
