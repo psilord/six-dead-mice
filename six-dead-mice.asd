@@ -19,4 +19,6 @@
                 (:file "B")
                 (:file "C")
                 (:file "D")
+                (:file "E-classes")
+                (:file "E-interpreter")
                 (:file "six-dead-mice")))
