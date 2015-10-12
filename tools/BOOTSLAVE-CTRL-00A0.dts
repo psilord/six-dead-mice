@@ -91,3 +91,23 @@
 //
 // CAPE="BOOTSLAVE-CTRL"
 
+// Verification that it worked:
+
+// Then after booting or installing the device overlay, we query the pins
+// we care about to see their status:
+// # cat /sys/kernel/debug/pinctrl/44e10800.pinmux/pins | egrep -e '(890|894|898)'
+// pin 36 (44e10890) 00000007 pinctrl-single 
+// pin 37 (44e10894) 00000007 pinctrl-single 
+// pin 38 (44e10898) 00000007 pinctrl-single 
+
+// The above modes are correct.
+
+// # cat /sys/kernel/debug/pinctrl/44e10800.pinmux/pinmux-pins | egrep -e '(890|894|898)'
+// 
+// pin 36 (44e10890): bootslave-ctrl_helper.15 (GPIO UNCLAIMED) function pinmux_bootslave_ctrl group pinmux_bootslave_ctrl
+// pin 37 (44e10894): bootslave-ctrl_helper.15 (GPIO UNCLAIMED) function pinmux_bootslave_ctrl group pinmux_bootslave_ctrl
+// pin 38 (44e10898): bootslave-ctrl_helper.15 (GPIO UNCLAIMED) function pinmux_bootslave_ctrl group pinmux_bootslave_ctrl
+
+// The above functions are devoted to BOOTSLAVE-CTRL
+
+// Excellent
