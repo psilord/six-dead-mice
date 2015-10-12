@@ -205,6 +205,9 @@ function op_boot_eMMC ()
 	# first, we simply turn off the board.
 	set_gpio_value ${POWER_CONTROL} 1
 
+	# and ensure we aren't in the reset stat
+	set_gpio_value ${RESET_CONTROL} 0
+
 	# and safely sleep a bit to let it drain any power in the capacitors.
 	sleep 1
 
@@ -225,6 +228,9 @@ function op_boot_spio_only ()
 {
 	# first, we simply turn off the board.
 	set_gpio_value ${POWER_CONTROL} 1
+
+	# and ensure we aren't in the reset stat
+	set_gpio_value ${RESET_CONTROL} 0
 
 	# and safely sleep a bit to let it drain any power in the capacitors.
 	sleep 1
