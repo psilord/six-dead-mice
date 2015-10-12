@@ -9,8 +9,8 @@
 # We use three pins on the master BBB as defined by the BOOTSLAVE-CTRL 
 # cape I built.
 # 
-# P8_7 (gpio2[2]): Power Control
-# P8_8 (gpio2[3]): Reset Control
+# P8_7:  (gpio2[2]): Power Control
+# P8_8:  (gpio2[3]): Reset Control
 # P8_10: (gpio2[4]): Boot Mode Control
 
 # In the below truth tables, z represents a high impedance state (such as an
