@@ -1,4 +1,4 @@
-(in-package :six-dead-mice)
+(in-package :lang-a)
 
 (defstruct %syntax-type
   syntax-type
