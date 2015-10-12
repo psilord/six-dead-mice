@@ -69,6 +69,16 @@ BOOT_MODE_CONTROL=68
 # And describe where the SPIO is on the master BBB
 DEV=/dev/ttyUSB0
 
+function validate_file ()
+{
+	local thefile="$1"
+
+	if [ "x$thefile" = "x" -o ! -f "$thefile" ]; then
+		echo "validate_file: no file found: $thefile"
+		exit 1;
+	fi
+}
+
 # Check to see that the control we want to use is valid.
 function validate_control ()
 {
@@ -241,10 +251,7 @@ function op_send_kernel ()
 {
 	local kernel="$1"
 
-	if [ "x$kernel" = "x" -o ! -f "$kernel" ]; then
-		echo "op_boot_spio_with_kernel: No kernel image found: $kernel"
-		exit 1;
-	fi
+	validate_file "$kernel"
 
 	# We assume the boot mode of the slave is SPIO for this function. So
 	# resetting the BBB will start the xmodem protocol automatically.
@@ -265,6 +272,18 @@ function op_send_kernel ()
 	sx -k -o -vv "$kernel" < "$DEV" > "$DEV"
 }
 
+# A standalone operation that I want to do to the slave.
+function op_boot_spio_send_kernel ()
+{
+	local kernel="$1"
+
+	validate_file "$kernel"
+
+	op_boot_spio_only
+
+	op_send_kernel "$kernel"
+}
+
 
 # #########################################
 # The main part of the script
@@ -275,3 +294,5 @@ function op_send_kernel ()
 echo Done.
 
 exit 0
+
+
