@@ -1,0 +1,277 @@
+#!/bin/bash -e
+
+# This script allows us to control the: power, boot mode, reset state, and what
+# kernel is transferred over SPIO of a slave BBB. It is expected to be run on a
+# Master BBB that has a BOOTSLAVE-CTRL cape installed on it. This script and
+# cape is set up such that when we initialize all the GPIO pins we need with
+# low values, it means don't change anything.
+
+# We use three pins on the master BBB as defined by the BOOTSLAVE-CTRL 
+# cape I built.
+# 
+# P8_7 (gpio2[2]): Power Control
+# P8_8 (gpio2[3]): Reset Control
+# P8_10: (gpio2[4]): Boot Mode Control
+
+# In the below truth tables, z represents a high impedance state (such as an
+# unconnected signal line)
+
+# The truth tables:
+# Power Control
+# P8_7:  Signal |  Value of POWER TO SLAVE BOARD
+#          0    |    z  (POWER ON)
+#          1    |    0  (POWER OFF)
+#          z    |    z  (POWER ON)
+
+# Reset Control
+# P8_8:  Signal |  Value of SYS_RESETn
+#          0    |    z (Slave BBB not in reset mode)
+#          1    |    0 (Slave BBB in reset mode)
+#          z    |    z (Slave BBB not in reset mode)
+
+# Boot Mode Control
+# You can only change the Boot Mode on the Power Control transition: OFF -> ON.
+# Once the Boot Mode has been set, a Reset will not affect it.
+# First, we describe the truth table of the Reset Control signal in relation
+# to the boot Mode.
+# P8_10: SYS_RESETn Signal | Value of SYS_BOOT2 (lcd_data2)
+#           0           0  |    z (boot with normal and default settings)
+#           0           1  |    0 (boot with SPIO first)
+#           1           x  |    z (boot with normal  and default settings)
+#
+# Then, I reiterate that the Boot Mode signal is only valid during a 
+# Power Control transition where the slave BBB goes from OFF to ON.
+
+# ##########################
+
+# Now, we come to the software initialization of the gpio pins (which are
+# being muxed as GPIO pins in the right mode due to the loading of the
+# BOOTSLAVE-CTRL cape overlay, which this script assumes is currently
+# enabled (TODO: Make it not assume it and check each time, just in case).
+
+# Note that each gpioN controller is offset by 32 from the previous (0, 32, 64,
+# 96) and the offset we need is exactly the index in the gpio signal name:
+# gpio2[2] -> 64 + 2 = 66 so we'll end up with device file gpio66
+# gpio2[3] -> 64 + 3 = 67 so we'll end up with device file gpio67
+# gpio2[4] -> 64 + 4 = 68 so we'll end up with device file gpio68
+
+# Now that we know the names, we can associate our signals to the gpio
+# device files.
+
+# A prefix for all gpio lines in the device tree.
+GPIOPRE="/sys/class/gpio/gpio"
+
+# And finally the symbols representing the signal pins we need.
+POWER_CONTROL=66
+RESET_CONTROL=67
+BOOT_MODE_CONTROL=68
+
+# And describe where the SPIO is on the master BBB
+DEV=/dev/ttyUSB0
+
+# Check to see that the control we want to use is valid.
+function validate_control ()
+{
+	local control="$1"
+
+	echo Validating: ${control}
+
+	# verify valid control value
+	case "x${control}" in 
+		x${POWER_CONTROL}|x${RESET_CONTROL}|x${BOOT_MODE_CONTROL})
+			# Good, nothing to do
+			;;
+		*)
+			echo "validate_control: Invalid control signal: ${control}"
+			exit 1;
+			;;
+	esac
+}
+
+# Check to see that the direction we want to use is valid.
+function validate_directional_value ()
+{
+	local value="$1"
+
+	# verify valid value
+	case "x${value}" in 
+		xlow|xhigh)
+			# Good, nothing to do
+			;;
+		*)
+			echo "validate_directional_value: invalid direction: ${value}"
+			exit 1
+			;;
+	esac
+}
+
+# Check to see that the pin value we want to use is valid.
+function validate_signal_value ()
+{
+	local value="$1"
+
+	# verify valid value
+	case "x${value}" in 
+		x0|x1)
+			# Good, nothing to do
+			;;
+		*)
+			echo "validate_signal_value: invalid signal pin value: ${value}"
+			exit 1
+			;;
+	esac
+}
+
+function set_gpio_direction ()
+{
+	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
+	local control="$1"
+	# value can be "low" or "high", default to "low"
+	local value=${2:"low"}
+
+	validate_control $control
+	validate_direction_value $value
+
+	echo $value > "${GPIOPRE}${control}/direction"
+}
+
+function set_gpio_value ()
+{
+	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
+	local control="$1"
+	# value can be "0" or "1", default to 0
+	local value=${2:"0"}
+
+	validate_control $control
+	validate_signal_value $value
+
+	echo $value > "${GPIOPRE}${control}/value"
+}
+
+function init_gpio_output_signal ()
+{
+	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
+	local control="$1"
+	# value can be "low" or "high" which is always an output direction.
+	local value=${2:"low"}
+
+	validate_control $control
+	validate_direction_value $value
+
+	# If the device file we need representing the gpio line isn't present
+	# we export it and this will create that file.
+	if [ ! -d "${GPIOPRE}${control}" ]; then 
+		echo ${control} > /sys/class/gpio/export
+	fi
+
+	# Our pins are always output pins, so we initialize it like this.
+	echo $value > "${GPIOPRE}${control}/direction"
+}
+
+function init_gpio ()
+{
+	init_gpio_output_signal ${POWER_CONTROL} low
+	init_gpio_output_signal ${RESET_CONTROL} low
+	init_gpio_output_signal ${BOOT_MODE_CONTROL} low
+}
+
+# A standalone operation that I want to do to the slave.
+function op_reset_slave ()
+{
+	local timeout=${1:.2}
+
+	# Reset the slave by setting the Reset Control high
+	set_gpio_value ${RESET_CONTROL} 1
+
+	sleep $timeout
+
+	# And then set it back to low, which takes the slave out of reset.
+	set_gpio_value ${RESET_CONTROL} 0
+}
+
+# A standalone operation that I want to do to the slave.
+function op_boot_eMMC ()
+{
+	# first, we simply turn off the board.
+	set_gpio_value ${POWER_CONTROL} 1
+
+	# and safely sleep a bit to let it drain any power in the capacitors.
+	sleep 1
+
+	# Then we ensure that the BOOT_MODE is for a normal boot
+	set_gpio_value ${BOOT_MODE_CONTROL} 0
+
+	# and allow that to settle.
+	sleep .1
+
+	# Then we turn on the board and it will boot the normal sequence.
+	set_gpio_value ${POWER_CONTROL} 0
+
+	# The BOOT_MODE is already 0, so we'll leave it that way
+}
+
+# A standalone operation that I want to do to the slave.
+function op_boot_spio_only ()
+{
+	# first, we simply turn off the board.
+	set_gpio_value ${POWER_CONTROL} 1
+
+	# and safely sleep a bit to let it drain any power in the capacitors.
+	sleep 1
+
+	# Then we ensure that the BOOT_MODE is for the SPIO sequence
+	set_gpio_value ${BOOT_MODE_CONTROL} 1
+
+	# and safely allow that to settle.
+	sleep .1
+
+	# Then we turn on the board and it will boot the normal sequence.
+	set_gpio_value ${POWER_CONTROL} 0
+
+	# sleep a bit to allow the board to boot in the right mode
+	sleep .1
+
+	# Now that we've booted, we can set the boot mode signal back to 0. We
+	# don't need it anymore and it is safer to have no power going through it.
+	set_gpio_value ${BOOT_MODE_CONTROL} 0
+}
+
+# A standalone operation that I want to do to the slave.
+function op_send_kernel ()
+{
+	local kernel="$1"
+
+	if [ "x$kernel" = "x" -o ! -f "$kernel" ]; then
+		echo "op_boot_spio_with_kernel: No kernel image found: $kernel"
+		exit 1;
+	fi
+
+	# We assume the boot mode of the slave is SPIO for this function. So
+	# resetting the BBB will start the xmodem protocol automatically.
+	op_reset_slave
+
+	# ############################
+	# Send the kernel image
+	# ############################
+
+	# Turn off XON/XOFF, turn off RTS/CTS handshake, 8 data bits, no parity, one
+	# stop bit, don't clear 8th bit, baud is 115200
+
+	stty -ixon -crtscts cs8 -parenb -cstopb -istrip -F "$DEV" 115200
+
+	# and then send the file (1024 byte blocks and 16-bit crc enabled)
+	# through the serial port. using the xmodem-crc protocol.
+
+	sx -k -o -vv "$kernel" < "$DEV" > "$DEV"
+}
+
+
+# #########################################
+# The main part of the script
+# #########################################
+
+# TODO
+
+echo Done.
+
+exit 0
