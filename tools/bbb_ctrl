@@ -325,7 +325,7 @@ function op_send_kernel ()
 	# stop bit, don't clear 8th bit, baud is 115200
 	stty -ixon -crtscts cs8 -parenb -cstopb -istrip -F "$DEV" 115200
 
-	echo "Sending kernel $file to slave."
+	echo "Sending kernel $kernel to slave."
 	# and then send the file (1024 byte blocks and 16-bit crc enabled)
 	# through the serial port. using the xmodem-crc protocol.
 	sx -k -o -vv "$kernel" < "$DEV" > "$DEV"
