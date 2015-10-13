@@ -349,6 +349,53 @@ function op_boot_spio_send_kernel ()
 	echo "END op_boot_spio_send_kernel."
 }
 
+function op_test ()
+{
+	echo "BEGIN op_test."
+
+	echo "Set POWER_CONTROL low."
+	set_gpio_value ${POWER_CONTROL} 0
+
+	echo "Set RESET_CONTROL low."
+	set_gpio_value ${RESET_CONTROL} 0
+
+	echo "Set BOOT_MODE_CONTROL low."
+	set_gpio_value ${BOOT_MODE_CONTROL} 0
+
+	echo "Sleep 1 second."
+	sleep 1
+
+	echo "Set POWER_CONTROL high."
+	set_gpio_value ${POWER_CONTROL} 1
+
+	echo "Sleep 1 second."
+	sleep 1
+
+	echo "Set RESET_CONTROL high."
+	set_gpio_value ${RESET_CONTROL} 1
+
+	echo "Sleep 1 second."
+	sleep 1
+
+	echo "Set BOOT_MODE_CONTROL high."
+	set_gpio_value ${BOOT_MODE_CONTROL} 1
+
+	echo "Sleep 1 second."
+	sleep 1
+
+	echo "Set POWER_CONTROL low."
+	set_gpio_value ${POWER_CONTROL} 0
+
+	echo "Set RESET_CONTROL low."
+	set_gpio_value ${RESET_CONTROL} 0
+
+	echo "Set BOOT_MODE_CONTROL low."
+	set_gpio_value ${BOOT_MODE_CONTROL} 0
+
+	echo "END op_test."
+
+}
+
 function usage
 {
 	local retval=${1:-1}
@@ -385,6 +432,12 @@ while [ $# -ge 0 ]; do
 	case "$arg" in
 		-h | --help)
 			usage
+			exit 0
+			;;
+
+		--test)
+			op_test
+			exit 0
 			;;
 
 		--reset)
@@ -395,32 +448,33 @@ while [ $# -ge 0 ]; do
 			;;
 
 		--boot-eMMC)
-			echo op_boot_eMMC
+			op_boot_eMMC
 			exit 0
 			;;
 
 		--boot-spio-only)
-			echo op_boot_spio_only
+			op_boot_spio_only
 			exit 0
 			;;
 
 		--send-kernel)
 			shift # get next argument
 			kernel="$1"
-			echo op_send_kernel "$kernel"
+			op_send_kernel "$kernel"
 			exit 0
 			;;
 
 		--boot-spio-send-kernel)
 			shift # get next argument
 			kernel="$1"
-			echo op_boot_spio_send_kernel "$kernel"
+			op_boot_spio_send_kernel "$kernel"
 			exit 0
 			;;
 
 		*)
 			# unknown option
 			usage
+			exit 0
 			;;
 	esac
 	shift # skip to the next argument for processing
