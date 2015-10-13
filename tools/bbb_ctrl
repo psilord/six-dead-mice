@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+# This script must be run with sudo.
+
 # This script allows us to control the: power, boot mode, reset state, and what
 # kernel is transferred over SPIO of a slave BBB. It is expected to be run on a
 # Master BBB that has a BOOTSLAVE-CTRL cape installed on it. This script and
@@ -69,6 +71,9 @@ BOOT_MODE_CONTROL=68
 # And describe where the SPIO is on the master BBB
 DEV=/dev/ttyUSB0
 
+# Some defaults
+DEFAULT_RESET_TIMEOUT=.2
+
 function validate_file ()
 {
 	local thefile="$1"
@@ -84,8 +89,6 @@ function validate_control ()
 {
 	local control="$1"
 
-	echo Validating: ${control}
-
 	# verify valid control value
 	case "x${control}" in 
 		x${POWER_CONTROL}|x${RESET_CONTROL}|x${BOOT_MODE_CONTROL})
@@ -99,7 +102,7 @@ function validate_control ()
 }
 
 # Check to see that the direction we want to use is valid.
-function validate_directional_value ()
+function validate_direction_value ()
 {
 	local value="$1"
 
@@ -109,7 +112,7 @@ function validate_directional_value ()
 			# Good, nothing to do
 			;;
 		*)
-			echo "validate_directional_value: invalid direction: ${value}"
+			echo "validate_direction_value: invalid direction: ${value}"
 			exit 1
 			;;
 	esac
@@ -137,7 +140,7 @@ function set_gpio_direction ()
 	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
 	local control="$1"
 	# value can be "low" or "high", default to "low"
-	local value=${2:"low"}
+	local value=${2:-"low"}
 
 	validate_control $control
 	validate_direction_value $value
@@ -150,7 +153,7 @@ function set_gpio_value ()
 	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
 	local control="$1"
 	# value can be "0" or "1", default to 0
-	local value=${2:"0"}
+	local value=${2:-"0"}
 
 	validate_control $control
 	validate_signal_value $value
@@ -163,7 +166,7 @@ function init_gpio_output_signal ()
 	# Something like ${POWER_CONTROL}, ${RESET_CONTROL}, ${BOOT_MODE_CONTROL}
 	local control="$1"
 	# value can be "low" or "high" which is always an output direction.
-	local value=${2:"low"}
+	local value=${2:-"low"}
 
 	validate_control $control
 	validate_direction_value $value
@@ -178,6 +181,26 @@ function init_gpio_output_signal ()
 	echo $value > "${GPIOPRE}${control}/direction"
 }
 
+function bootslave_ctrl_detect ()
+{
+	if [ ! -r /sys/kernel/debug/pinctrl/44e10800.pinmux/pinmux-pins ]; then
+		echo "#######################################"
+		echo "You need to be root to run this script."
+		echo "#######################################"
+		usage
+		exit 1;
+	fi
+
+	cat /sys/kernel/debug/pinctrl/44e10800.pinmux/pinmux-pins | egrep -e '(890|894|898)' 2>&1 | grep bootslave 2>&1 > /dev/null
+	ret=$?
+
+	if [ ! $ret = 0 ]; then
+		echo "It appears the BOOTSLAVE-CTRL cape is not enabled. Aborting."
+		exit 1;
+	fi
+}
+
+# Call this first to ensure the GPIO lines are initialized.
 function init_gpio ()
 {
 	init_gpio_output_signal ${POWER_CONTROL} low
@@ -186,76 +209,106 @@ function init_gpio ()
 }
 
 # A standalone operation that I want to do to the slave.
-function op_reset_slave ()
+function op_reset ()
 {
-	local timeout=${1:.2}
+	local timeout=${1:-${DEFAULT_RESET_TIMEOUT}}
 
-	# Reset the slave by setting the Reset Control high
+	echo "BEGIN op_reset."
+
+	echo "Set RESET_CONTROL high."
 	set_gpio_value ${RESET_CONTROL} 1
 
+	echo "Slave is in reset state."
+
+	echo "Sleep $timeout seconds."
 	sleep $timeout
 
-	# And then set it back to low, which takes the slave out of reset.
+	echo "Set RESET_CONTROL low."
 	set_gpio_value ${RESET_CONTROL} 0
+
+	echo "Slave is not in reset state."
+
+	echo "END op_reset."
 }
 
 # A standalone operation that I want to do to the slave.
 function op_boot_eMMC ()
 {
-	# first, we simply turn off the board.
+	echo "BEGIN op_boot_eMMC."
+
+	echo "Set POWER_CONTROL high."
 	set_gpio_value ${POWER_CONTROL} 1
 
-	# and ensure we aren't in the reset stat
+	echo "Slave should be off."
+
+	echo "Set RESET_CONTROL low."
 	set_gpio_value ${RESET_CONTROL} 0
 
-	# and safely sleep a bit to let it drain any power in the capacitors.
+	echo "Slave is not in reset state."
+
+	echo "Sleep 1 second."
 	sleep 1
 
-	# Then we ensure that the BOOT_MODE is for a normal boot
+	echo "Set BOOT_MODE low."
 	set_gpio_value ${BOOT_MODE_CONTROL} 0
 
-	# and allow that to settle.
+	echo "Slave will boot normal boot sequence."
+
+	echo "Sleep .1 seconds."
 	sleep .1
 
-	# Then we turn on the board and it will boot the normal sequence.
+	echo "Set POWER_CONTROL low."
 	set_gpio_value ${POWER_CONTROL} 0
 
-	# The BOOT_MODE is already 0, so we'll leave it that way
+	echo "Slave should be on, booting normally."
+
+	echo "END op_boot_eMMC."
 }
 
 # A standalone operation that I want to do to the slave.
 function op_boot_spio_only ()
 {
-	# first, we simply turn off the board.
+	echo "BEGIN op_boot_spio_only."
+
+	echo "Set POWER_CONTROL high."
 	set_gpio_value ${POWER_CONTROL} 1
 
-	# and ensure we aren't in the reset stat
+	echo "Slave should be off."
+
+	echo "Set RESET_CONTROL low."
 	set_gpio_value ${RESET_CONTROL} 0
 
-	# and safely sleep a bit to let it drain any power in the capacitors.
+	echo "Slave is not in reset state."
+
+	echo "Sleep 1 second."
 	sleep 1
 
-	# Then we ensure that the BOOT_MODE is for the SPIO sequence
+	echo "Set BOOT_MODE high."
 	set_gpio_value ${BOOT_MODE_CONTROL} 1
 
-	# and safely allow that to settle.
+	echo "Sleep .1 seconds."
 	sleep .1
 
-	# Then we turn on the board and it will boot the normal sequence.
+	echo "Set POWER_CONTROL low."
 	set_gpio_value ${POWER_CONTROL} 0
 
 	# sleep a bit to allow the board to boot in the right mode
 	sleep .1
 
-	# Now that we've booted, we can set the boot mode signal back to 0. We
-	# don't need it anymore and it is safer to have no power going through it.
+	echo "Slave should be on, booting from SPIO0."
+
+	echo "Set BOOT_MODE_CONTROL low. (For safety.)"
 	set_gpio_value ${BOOT_MODE_CONTROL} 0
+
+	echo "END op_boot_spio_only."
 }
 
 # A standalone operation that I want to do to the slave.
 function op_send_kernel ()
 {
 	local kernel="$1"
+
+	echo "BEGIN op_send_kernel."
 
 	validate_file "$kernel"
 
@@ -267,15 +320,17 @@ function op_send_kernel ()
 	# Send the kernel image
 	# ############################
 
+	echo "Configuring serial device: $DEV"
 	# Turn off XON/XOFF, turn off RTS/CTS handshake, 8 data bits, no parity, one
 	# stop bit, don't clear 8th bit, baud is 115200
-
 	stty -ixon -crtscts cs8 -parenb -cstopb -istrip -F "$DEV" 115200
 
+	echo "Sending kernel $file to slave."
 	# and then send the file (1024 byte blocks and 16-bit crc enabled)
 	# through the serial port. using the xmodem-crc protocol.
-
 	sx -k -o -vv "$kernel" < "$DEV" > "$DEV"
+
+	echo "END op_send_kernel."
 }
 
 # A standalone operation that I want to do to the slave.
@@ -283,11 +338,34 @@ function op_boot_spio_send_kernel ()
 {
 	local kernel="$1"
 
+	echo "BEGIN op_boot_spio_send_kernel."
+
 	validate_file "$kernel"
 
 	op_boot_spio_only
 
 	op_send_kernel "$kernel"
+
+	echo "END op_boot_spio_send_kernel."
+}
+
+function usage
+{
+	local retval=${1:-1}
+
+	cat << EOF;
+Command: $0
+-h | --help         This message.
+
+You may specify only ONE of these options:
+--reset [timeout]   Reset the slave, default timeout of $DEFAULT_RESET_TIMEOUT
+--boot-eMMC         Power Cycle, boot sequence: eMMC, MMC0, USB0, UART0
+--boot-spio-only    Power Cycle, boot sequence: SPIO0, MMC0, USB0, UART0
+--send-kernel file  Using xmodem on SPIO0, reset and send the specified file.
+--boot-spio-send-kernel file
+                    Power Cycle, booting to SPIO0, then send the kernel file.
+EOF
+	exit $retval
 }
 
 
@@ -295,10 +373,60 @@ function op_boot_spio_send_kernel ()
 # The main part of the script
 # #########################################
 
-# TODO
+bootslave_ctrl_detect
+
+init_gpio
+
+# Process the command line arguments and invoke the requested op.
+
+while [ $# -ge 0 ]; do
+	arg="$1"
+
+	case "$arg" in
+		-h | --help)
+			usage
+			;;
+
+		--reset)
+			shift # get next argument
+			timeout="$1"
+			op_reset "$timeout"
+			exit 0
+			;;
+
+		--boot-eMMC)
+			echo op_boot_eMMC
+			exit 0
+			;;
+
+		--boot-spio-only)
+			echo op_boot_spio_only
+			exit 0
+			;;
+
+		--send-kernel)
+			shift # get next argument
+			kernel="$1"
+			echo op_send_kernel "$kernel"
+			exit 0
+			;;
+
+		--boot-spio-send-kernel)
+			shift # get next argument
+			kernel="$1"
+			echo op_boot_spio_send_kernel "$kernel"
+			exit 0
+			;;
+
+		*)
+			# unknown option
+			usage
+			;;
+	esac
+	shift # skip to the next argument for processing
+done
 
 echo Done.
 
 exit 0
-
 
