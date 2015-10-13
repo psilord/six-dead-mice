@@ -21,7 +21,7 @@
                 pinctrl-single,pins = <
                     // Default pinmux and modes for these pins.
                     // addr with 0x44e10 as the start, mode bits
-                    // NOTE: for the fisrt value: 0x0.. means prefix 0x44e18
+                    // NOTE: for the first value: 0x0.. means prefix 0x44e18
 					// NOTE: for the first value: 0x1.. means prefix 0x44e19
                     0x090 0x07 // P8_07: GPIO2_2 INP PD PD-ENABLE Mode7, GPIO
                     0x094 0x07 // P8_08: GPIO2_3 INP PD PD-ENABLE Mode7, GPIO
