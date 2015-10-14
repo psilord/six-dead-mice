@@ -12,3 +12,17 @@ bbb_boot uses sx and the XMODEM-CRC protocol to download the _initial_
 kernel image to the BBB.  kermit was unstable, this seems to not only
 work better, but also much faster. One still uses kermit to connect
 to the booted machine though.
+
+
+I finally am settng up the gpio pins I want to use properly. This means
+making a device tree overlay.
+
+http://www.valvers.com/embedded-linux/beaglebone-black/step04-gpio/
+
+# P8 information 
+
+root@white:~# cat /sys/kernel/debug/pinctrl/44e10800.pinmux/pins | egrep -e '(818|81c|808|80c|890|894|89c|898|834|830|824|828|83c|838|82c|88c|820|884|880|814|810|804|800|87c|8e0|8e8|8e4|8ec|8d8|8dc|8d4|8cc|8d0|8c8|8c0|8c4|8b8|8bc|8b0|8b4|8a8|8ac|8a0|8a4)'
+
+root@white:~# cat /sys/kernel/debug/pinctrl/44e10800.pinmux/pinmux-pins |  egrep -e '(818|81c|808|80c|890|894|89c|898|834|830|824|828|83c|838|82c|88c|820|884|880|814|810|804|800|87c|8e0|8e8|8e4|8ec|8d8|8dc|8d4|8cc|8d0|8c8|8c0|8c4|8b8|8bc|8b0|8b4|8a8|8ac|8a0|8a4)'
+
+
