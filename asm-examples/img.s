@@ -3,7 +3,7 @@ Set up a non-preemptive echo server over serial port.
 */
 
 .equ EXEC_START,			0x402F0400 @ Where Execution will start.
-.equ STACK_START,			0x4030cdfc @ Where Stack will start.
+.equ STACK_START,			0x4030CDFC @ Where Stack will start.
 
 .equ CM_PER_GPIO1_CLKCTRL,	0x44e000AC
 .equ GPIO1_OE,				0x4804C134
@@ -20,26 +20,36 @@ Set up a non-preemptive echo server over serial port.
 
 .arm
 
-# Used for storing ALL registers, not just the normal ones for subroutines.
+# Used for storing ALL user registers, not just the normal ones for
+# subroutines.
 .macro	m_all_regs_store
 	# First, immediately save *all* of the registers.
 	push 	{r0-r12,r14}
 	# Then save pc...
 	mov		r0, pc 
 	push	{r0}
+	# Then save apsr...
+	mrs		r0, apsr
+	push	{r0}
 	# Then save sp...
 	mov		r0, sp
 	push	{r0}
+	# undo my machinations on r0 by retrieving r0 from the stack.
+	# 0 is sp, 1 is apsr, 2 is pc, 3 is r0, ..., 14 is r12, 15 is r14
+	ldr		r0, [sp, #(3 * 4)]
 .endm
 
-# Used for restoring ALL registers, not just the normal ones for subroutines.
+# Used for restoring ALL user registers, not just the normal ones for
+# subroutines.
 .macro m_all_regs_restore
-	# Restore sp
+	# Restore sp....
 	pop		{r0}
 	mov		sp, r0
-	# Restore pc
+	# Restore apsr (but throw away the value)
 	pop		{r0}
-	# but DON'T restore the PC to actually be the PC.
+	# Restore pc....
+	pop		{r0}
+	# but DON'T restore the PC to actually be the PC; we throw away its value
 
 	# ....then we get the rest of the registers normally
 	pop 	{r0-r12,r14}
@@ -49,6 +59,25 @@ Set up a non-preemptive echo server over serial port.
 
 
 _start:
+	# first initialize all registers (except r15/PC) to zero.
+	eors	r0, r0, r0
+	eors	r1, r1, r1
+	eors	r2, r2, r2
+	eors	r3, r3, r3
+	eors	r4, r4, r4
+	eors	r5, r5, r5
+	eors	r6, r6, r6
+	eors	r7, r7, r7
+	eors	r8, r8, r8
+	eors	r9, r9, r9
+	eors	r10, r10, r10
+	eors	r11, r11, r11
+	eors	r12, r12, r12
+	eors	r13, r13, r13
+	eors	r14, r14, r14
+
+	# Now we start.
+
 	# set up a small stack for function calls
 
 	# setup stack pointer to the MAX 6 kB stack
@@ -181,20 +210,20 @@ echo_it:
 	bl		uart_readc
 	mov		r4, r0
 
-	/* echo character in r0 back. */
-	bl		uart_putc
-
 	/* emit a debug map of registers when I hit see a ESC character */
+	/* don't echo the escape back. */
 	cmp 	r4, #0x1b
-	bne		echo_it_skip
-	push	{r0-r12}
-	bl		emit_newline
-	pop		{r0-r12}
+	bne		echo_it_echo
 	bl		emit_register_dump
 	bl		emit_newline
 	bl		emit_prompt 
+	b		echo_it
 
-echo_it_skip:
+echo_it_echo:
+	/* echo whatever non command character I read back to the console */
+	mov		r0, r4
+	bl		uart_putc
+
 	cmp		r4, #'\n'
 	bleq	emit_prompt 
 	b		echo_it
@@ -302,23 +331,25 @@ emit_r0_value:
 /* ************************************* */
 /* emit value of r1 */
 emit_r1_value:
-	push 	{lr}
+	push 	{r4, lr}
+	mov		r4, r1
 	adrl	r0, string_register_r1
 	bl		string_emit
-	mov		r0, r1
+	mov		r0, r4
 	bl		emit_reg_value
-	pop 	{lr}
+	pop 	{r4, lr}
 	bx		lr
 
 /* ************************************* */
 /* emit value of r2 */
 emit_r2_value:
-	push 	{lr}
+	push 	{r4, lr}
+	mov		r4, r2
 	adrl	r0, string_register_r2
 	bl		string_emit
-	mov		r0, r2
+	mov		r0, r4
 	bl		emit_reg_value
-	pop 	{lr}
+	pop 	{r4, lr}
 	bx		lr
 
 /* ************************************* */
@@ -327,6 +358,150 @@ emit_r3_value:
 	push 	{r4, lr}
 	mov		r4, r3
 	adrl	r0, string_register_r3
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r4 */
+emit_r4_value:
+	push 	{r5, lr}
+	mov		r5, r4
+	adrl	r0, string_register_r4
+	bl		string_emit
+	mov		r0, r5
+	bl		emit_reg_value
+	pop 	{r5, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r5 */
+emit_r5_value:
+	push 	{r4, lr}
+	mov		r4, r5
+	adrl	r0, string_register_r5
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r6 */
+emit_r6_value:
+	push 	{r4, lr}
+	mov		r4, r6
+	adrl	r0, string_register_r6
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r7 */
+emit_r7_value:
+	push 	{r4, lr}
+	mov		r4, r7
+	adrl	r0, string_register_r7
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r8 */
+emit_r8_value:
+	push 	{r4, lr}
+	mov		r4, r8
+	adrl	r0, string_register_r8
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r9 */
+emit_r9_value:
+	push 	{r4, lr}
+	mov		r4, r9
+	adrl	r0, string_register_r9
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r10 */
+emit_r10_value:
+	push 	{r4, lr}
+	mov		r4, r10
+	adrl	r0, string_register_r10
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r11 */
+emit_r11_value:
+	push 	{r4, lr}
+	mov		r4, r11
+	adrl	r0, string_register_r11
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r12 */
+emit_r12_value:
+	push 	{r4, lr}
+	mov		r4, r12
+	adrl	r0, string_register_r12
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r13 */
+emit_r13_value:
+	push 	{r4, lr}
+	mov		r4, r13
+	adrl	r0, string_register_r13
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r14 */
+emit_r14_value:
+	push 	{r4, lr}
+	mov		r4, r14
+	adrl	r0, string_register_r14
+	bl		string_emit
+	mov		r0, r4
+	bl		emit_reg_value
+	pop 	{r4, lr}
+	bx		lr
+
+/* ************************************* */
+/* emit value of r15 */
+emit_r15_value:
+	push 	{r4, lr}
+	mov		r4, r15
+	adrl	r0, string_register_r15
 	bl		string_emit
 	mov		r0, r4
 	bl		emit_reg_value
@@ -349,11 +524,13 @@ emit_apsr_value:
 emit_register_dump:
 	m_all_regs_store
 
-	mov		r4, r0
+	# allow this so I can destroy registers.
+	m_all_regs_store
+	bl		emit_newline
 	adrl	r0, string_register_dump
 	bl		string_emit
 	bl		emit_newline
-	mov		r0, r4
+	m_all_regs_restore
 
 	bl		emit_r0_value
 	bl		emit_newline
@@ -362,6 +539,30 @@ emit_register_dump:
 	bl		emit_r2_value
 	bl		emit_newline
 	bl		emit_r3_value
+	bl		emit_newline
+	bl		emit_r4_value
+	bl		emit_newline
+	bl		emit_r5_value
+	bl		emit_newline
+	bl		emit_r6_value
+	bl		emit_newline
+	bl		emit_r7_value
+	bl		emit_newline
+	bl		emit_r8_value
+	bl		emit_newline
+	bl		emit_r9_value
+	bl		emit_newline
+	bl		emit_r10_value
+	bl		emit_newline
+	bl		emit_r11_value
+	bl		emit_newline
+	bl		emit_r12_value
+	bl		emit_newline
+	bl		emit_r13_value
+	bl		emit_newline
+	bl		emit_r14_value
+	bl		emit_newline
+	bl		emit_r15_value
 	bl		emit_newline
 	bl		emit_apsr_value
 	bl		emit_newline
@@ -452,42 +653,42 @@ hex_map:
 string_register_dump:
 	.asciz "Register DUMP:"
 string_register_r0:
-	.asciz "  R0: "
+	.asciz "  r0(a1):     "
 string_register_r1:
-	.asciz "  R1: "
+	.asciz "  r1(a2):     "
 string_register_r2:
-	.asciz "  R2: "
+	.asciz "  r2(a3):     "
 string_register_r3:
-	.asciz "  R3: "
+	.asciz "  r3(a4):     "
 string_register_r4:
-	.asciz "  R4: "
+	.asciz "  r4(v1):     "
 string_register_r5:
-	.asciz "  R5: "
+	.asciz "  r5(v2):     "
 string_register_r6:
-	.asciz "  R6: "
+	.asciz "  r6(v3):     "
 string_register_r7:
-	.asciz "  R7: "
+	.asciz "  r7(v4):     "
 string_register_r8:
-	.asciz "  R8: "
+	.asciz "  r8(v5):     "
 string_register_r9:
-	.asciz "  R9: "
+	.asciz "  r9(v6/sb):  "
 string_register_r10:
-	.asciz "  R10: "
+	.asciz "  r10(v7/sl): "
 string_register_r11:
-	.asciz "  R11: "
+	.asciz "  r11(v8/fp): "
 string_register_r12:
-	.asciz "  R12: "
+	.asciz "  r12(ip):    "
 string_register_r13:
 string_register_sp:
-	.asciz "  R13(SP): "
+	.asciz "  r13(sp):    "
 string_register_r14:
 string_register_lr:
-	.asciz "  R14(LR): "
+	.asciz "  r14(lr):    "
 string_register_r15:
 string_register_pc:
-	.asciz "  R15(PC): "
+	.asciz "  r15(pc):    "
 string_register_apsr:
-	.asciz "  apsr: "
+	.asciz "  apsr:       "
 
 # TODO: add more strings here to dump registers.
 
