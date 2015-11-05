@@ -16,5 +16,7 @@ boot: all
 test: boot
 	kermit -c
 
+go: test
+
 clean:
 	rm -f *.o *.bin *.lst img

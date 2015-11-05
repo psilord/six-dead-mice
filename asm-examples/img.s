@@ -18,6 +18,39 @@ Set up a non-preemptive echo server over serial port.
 .equ UART0_SYSS,			0x44E09058
 .equ UART0_BASE,			0x44E09000
 
+.equ B31,				(1<<31)
+.equ B30,				(1<<30)
+.equ B29,				(1<<29)
+.equ B28,				(1<<28)
+.equ B27,				(1<<27)
+.equ B26,				(1<<26)
+.equ B25,				(1<<25)
+.equ B24,				(1<<24)
+.equ B23,				(1<<23)
+.equ B22,				(1<<22)
+.equ B21,				(1<<21)
+.equ B20,				(1<<20)
+.equ B19,				(1<<19)
+.equ B18,				(1<<18)
+.equ B17,				(1<<17)
+.equ B16,				(1<<16)
+.equ B15,				(1<<15)
+.equ B14,				(1<<14)
+.equ B13,				(1<<13)
+.equ B12,				(1<<12)
+.equ B11,				(1<<11)
+.equ B10,				(1<<10)
+.equ B9,				(1<<9)
+.equ B8,				(1<<8)
+.equ B7,				(1<<7)
+.equ B6,				(1<<6)
+.equ B5,				(1<<5)
+.equ B4,				(1<<4)
+.equ B3,				(1<<3)
+.equ B2,				(1<<2)
+.equ B1,				(1<<1)
+.equ B0,				(1<<0)
+
 .arm
 
 # Used for storing ALL user registers, not just the normal ones for
@@ -36,6 +69,8 @@ Set up a non-preemptive echo server over serial port.
 	push	{r0}
 	# undo my machinations on r0 by retrieving r0 from the stack.
 	# 0 is sp, 1 is apsr, 2 is pc, 3 is r0, ..., 14 is r12, 15 is r14
+	# NOTE: registers are pushed (by the processor in the push intruction)
+	# such that the highest register is at the highest address.
 	ldr		r0, [sp, #(3 * 4)]
 .endm
 
@@ -76,11 +111,7 @@ _start:
 	eors	r13, r13, r13
 	eors	r14, r14, r14
 
-	# Now we start.
-
-	# set up a small stack for function calls
-
-	# setup stack pointer to the MAX 6 kB stack
+	# Then set up a small stack for function calls. Stay below 6KB.
 	ldr		sp, =STACK_START
 
 	# set clock for GPIO1 (for the on board LEDs), TRM 8.1.12.1.29
@@ -200,8 +231,6 @@ uart_init:
 hlt:
 	b		hlt
 
-/* ************************************* */
-/* not a function */
 main_echo_server:
 	bl		emit_prompt 
 
@@ -314,217 +343,12 @@ emit_reg_nibble_done:
 	pop		{r4-r9, lr}
 	bx		lr
 
-
-/* ************************************* */
-/* emit value of r0 */
-emit_r0_value:
-	push 	{r4, lr}
-	mov		r4, r0
-	adrl	r0, string_register_r0
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-
-/* ************************************* */
-/* emit value of r1 */
-emit_r1_value:
-	push 	{r4, lr}
-	mov		r4, r1
-	adrl	r0, string_register_r1
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r2 */
-emit_r2_value:
-	push 	{r4, lr}
-	mov		r4, r2
-	adrl	r0, string_register_r2
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r3 */
-emit_r3_value:
-	push 	{r4, lr}
-	mov		r4, r3
-	adrl	r0, string_register_r3
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r4 */
-emit_r4_value:
-	push 	{r5, lr}
-	mov		r5, r4
-	adrl	r0, string_register_r4
-	bl		string_emit
-	mov		r0, r5
-	bl		emit_reg_value
-	pop 	{r5, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r5 */
-emit_r5_value:
-	push 	{r4, lr}
-	mov		r4, r5
-	adrl	r0, string_register_r5
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r6 */
-emit_r6_value:
-	push 	{r4, lr}
-	mov		r4, r6
-	adrl	r0, string_register_r6
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r7 */
-emit_r7_value:
-	push 	{r4, lr}
-	mov		r4, r7
-	adrl	r0, string_register_r7
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r8 */
-emit_r8_value:
-	push 	{r4, lr}
-	mov		r4, r8
-	adrl	r0, string_register_r8
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r9 */
-emit_r9_value:
-	push 	{r4, lr}
-	mov		r4, r9
-	adrl	r0, string_register_r9
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r10 */
-emit_r10_value:
-	push 	{r4, lr}
-	mov		r4, r10
-	adrl	r0, string_register_r10
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r11 */
-emit_r11_value:
-	push 	{r4, lr}
-	mov		r4, r11
-	adrl	r0, string_register_r11
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r12 */
-emit_r12_value:
-	push 	{r4, lr}
-	mov		r4, r12
-	adrl	r0, string_register_r12
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r13 */
-emit_r13_value:
-	push 	{r4, lr}
-	mov		r4, r13
-	adrl	r0, string_register_r13
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r14 */
-emit_r14_value:
-	push 	{r4, lr}
-	mov		r4, r14
-	adrl	r0, string_register_r14
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of r15 */
-emit_r15_value:
-	push 	{r4, lr}
-	mov		r4, r15
-	adrl	r0, string_register_r15
-	bl		string_emit
-	mov		r0, r4
-	bl		emit_reg_value
-	pop 	{r4, lr}
-	bx		lr
-
-/* ************************************* */
-/* emit value of APSR */
-emit_apsr_value:
-	push 	{lr}
-	adrl	r0, string_register_apsr
-	bl		string_emit
-	mrs		r0, apsr
-	bl		emit_reg_value
-	pop 	{lr}
-	bx		lr
-
 /* ************************************* */
 /* print values of all registers to serial port. */
 emit_register_dump:
 	m_all_regs_store
 
-	# allow this so I can destroy registers.
+	# Store them again so I can destroy registers.
 	m_all_regs_store
 	bl		emit_newline
 	adrl	r0, string_register_dump
@@ -532,42 +356,228 @@ emit_register_dump:
 	bl		emit_newline
 	m_all_regs_restore
 
-	bl		emit_r0_value
-	bl		emit_newline
-	bl		emit_r1_value
-	bl		emit_newline
-	bl		emit_r2_value
-	bl		emit_newline
-	bl		emit_r3_value
-	bl		emit_newline
-	bl		emit_r4_value
-	bl		emit_newline
-	bl		emit_r5_value
-	bl		emit_newline
-	bl		emit_r6_value
-	bl		emit_newline
-	bl		emit_r7_value
-	bl		emit_newline
-	bl		emit_r8_value
-	bl		emit_newline
-	bl		emit_r9_value
-	bl		emit_newline
-	bl		emit_r10_value
-	bl		emit_newline
-	bl		emit_r11_value
-	bl		emit_newline
-	bl		emit_r12_value
-	bl		emit_newline
-	bl		emit_r13_value
-	bl		emit_newline
-	bl		emit_r14_value
-	bl		emit_newline
-	bl		emit_r15_value
-	bl		emit_newline
-	bl		emit_apsr_value
+	# Now, we individually access each register off the stack and
+	# display it.
+
+	adrl	r0, string_register_r0
+	bl		string_emit
+	ldr		r0, [sp, #(3 * 4)] @ R0 in stack
+	bl		emit_reg_value
 	bl		emit_newline
 
+	adrl	r0, string_register_r1
+	bl		string_emit
+	ldr		r0, [sp, #(4 * 4)] @ R1 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r2
+	bl		string_emit
+	ldr		r0, [sp, #(5 * 4)] @ R2 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r3
+	bl		string_emit
+	ldr		r0, [sp, #(6 * 4)] @ R3 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r4
+	bl		string_emit
+	ldr		r0, [sp, #(7 * 4)] @ R4 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r5
+	bl		string_emit
+	ldr		r0, [sp, #(8 * 4)] @ R5 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r6
+	bl		string_emit
+	ldr		r0, [sp, #(9 * 4)] @ R6 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r7
+	bl		string_emit
+	ldr		r0, [sp, #(10 * 4)] @ R7 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r8
+	bl		string_emit
+	ldr		r0, [sp, #(11 * 4)] @ R8 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r9
+	bl		string_emit
+	ldr		r0, [sp, #(12 * 4)] @ R9 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r10
+	bl		string_emit
+	ldr		r0, [sp, #(13 * 4)] @ R10 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r11
+	bl		string_emit
+	ldr		r0, [sp, #(14 * 4)] @ R11 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r12
+	bl		string_emit
+	ldr		r0, [sp, #(15 * 4)] @ R12 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r13
+	bl		string_emit
+	ldr		r0, [sp, #(0 * 4)] @ R13 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r14
+	bl		string_emit
+	ldr		r0, [sp, #(16 * 4)] @ R14 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_r15
+	bl		string_emit
+	ldr		r0, [sp, #(2 * 4)] @ R15 in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	adrl	r0, string_register_apsr
+	bl		string_emit
+	ldr		r0, [sp, #(1 * 4)] @ apsr in stack
+	bl		emit_reg_value
+	bl		emit_newline
+
+	# Now, we emit the individual flags we care about from APSR
+	ldr		r0, [sp, #(1 * 4)] @ apsr in stack
+	bl		emit_apsr_flags
+
 	m_all_regs_restore
+	bx		lr
+
+/* ************************************* */
+/* emit apsr (contained in r0) individual flags */
+emit_apsr_flags:
+	push	{r4-r9,lr}
+	
+	mov		r4, r0
+	adrl	r0, string_apsr_flags
+	bl		string_emit
+
+	# Emit Nn: Negative/Less than flag
+	mov		r0, r4
+	ldr		r1, =B31
+	mov		r2, #'N'
+	mov		r3, #'n'
+	bl		emit_flag
+
+	# Emit Zz: Zero flag
+	mov		r0, r4
+	ldr		r1, =B30
+	mov		r2, #'Z'
+	mov		r3, #'z'
+	bl		emit_flag
+
+	# Emit Cc: Carry flag
+	mov		r0, r4
+	ldr		r1, =B29
+	mov		r2, #'C'
+	mov		r3, #'c'
+	bl		emit_flag
+
+	# Emit Vv: Overflow flag
+	mov		r0, r4
+	ldr		r1, =B28
+	mov		r2, #'V'
+	mov		r3, #'v'
+	bl		emit_flag
+
+	# Emit Qq: Sticky Overflow flag
+	mov		r0, r4
+	ldr		r1, =B27
+	mov		r2, #'Q'
+	mov		r3, #'q'
+	bl		emit_flag
+
+	# Emit Jj: Java state flag
+	mov		r0, r4
+	ldr		r1, =B24
+	mov		r2, #'J'
+	mov		r3, #'j'
+	bl		emit_flag
+
+	# Emit Ee: Endianess flag
+	mov		r0, r4
+	ldr		r1, =B9
+	mov		r2, #'E'
+	mov		r3, #'e'
+	bl		emit_flag
+
+	# Emit Aa: Imprecise data abort flag
+	mov		r0, r4
+	ldr		r1, =B8
+	mov		r2, #'E'
+	mov		r3, #'e'
+	bl		emit_flag
+
+	# Emit Ii: IRQ disable flag
+	mov		r0, r4
+	ldr		r1, =B7
+	mov		r2, #'I'
+	mov		r3, #'i'
+	bl		emit_flag
+
+	# Emit Ff: FIQ disable flag
+	mov		r0, r4
+	ldr		r1, =B6
+	mov		r2, #'F'
+	mov		r3, #'f'
+	bl		emit_flag
+
+	# Emit Tt: Thumb state flag
+	mov		r0, r4
+	ldr		r1, =B5
+	mov		r2, #'T'
+	mov		r3, #'t'
+	bl		emit_flag
+
+	# TODO: Decode the IT, GE, and M flags too!
+
+	bl		emit_newline
+
+	pop		{r4-r9,lr}
+	bx		lr
+
+/* ************************************* */
+/* emit flag: r0 is value to test, r1 is flag, r2 is char if 1,
+	r3 is char if 0 
+*/
+emit_flag:
+	push	{lr}
+
+	tst		r0, r1
+	beq		small_flag
+	mov		r0, r2
+	b		output_flag
+small_flag:
+	mov		r0, r3
+output_flag:
+	bl		uart_putc
+
+	pop		{lr}
 	bx		lr
 
 
@@ -689,8 +699,21 @@ string_register_pc:
 	.asciz "  r15(pc):    "
 string_register_apsr:
 	.asciz "  apsr:       "
+string_apsr_flags:
+	.asciz "  apsr flags: "
 
-# TODO: add more strings here to dump registers.
+# Data driven tables to dump out simple APSR flags to reduce code.
+apsr_simple_flag_number:
+	.byte 0x0b @ 11
+
+apsr_simple_flag_values:
+	.ascii "NnZzCcVvQqJjEeAaIiFfTt"
+
+apsr_simple_flag_positions:
+	# bit positions: 31, 30, 29, 28, 27, 24,  9,  8,  7,  6,  5
+	# flags:         Nn  Zz  Cc  Vv  Qq  Jj  Ee   Aa  Ii  Ff  Tt
+	.byte 0x1f, 0x1e, 0x1d, 0x1c, 0x1b, 0x18, 0x09, 0x08, 0x07, 0x06, 0x05
+
 
 
 
