@@ -114,51 +114,95 @@ _start:
 	# Then set up a small stack for function calls. Stay below 6KB.
 	ldr		sp, =STACK_START
 
-	# set clock for GPIO1 (for the on board LEDs), TRM 8.1.12.1.29
+	# TRM 8.1.12.1.29
+	# set clock for GPIO1 (for the on board LEDs)
 	ldr		r0, =CM_PER_GPIO1_CLKCTRL
 	ldr		r1, =0x40002
 	str		r1, [r0]
 
-	# set pin 21,22,23,24 for output, led USR0/1/2/3,
 	# TRM 25.3.4.3 
 	# TRM 25.4.1.16
+	# set pin 21,22,23,24 for output, led USR0/1/2/3,
 	ldr		r0, =GPIO1_OE
 	ldr		r1, [r0]
 	# In the next line we use 0xf to indicate 4 bits in a row we are clearing.
 	bic		r1, r1, #(0xf<<21)
 	str		r1, [r0]
 
-	# logical 1 turns on the led0, TRM 25.3.4.2.2.2
+	# TRM 25.3.4.2.2.2
+	# logical 1 turns on the led0, 
 	ldr		r0, =GPIO1_SETDATAOUT
 	ldr		r1, =(1<<21)
 	str		r1, [r0]
 
-	# set uart mux config
+	# Adjust multiplexer pin configurations for the RXD/TXD UART module pins.
+	# TRM 9.3.1.49
+	# set uart mux pin config via the CONTROL_MODULE registers
+	# This allows the uart to use the tx/rx pins properly.
 	ldr		r0, =CONF_UART0_RXD
-	ldr		r1, =(0x1<<4)|(0x1<<5)
+	# B4 is pullup selected
+	# B5 is receiver enabled (it should be an input)
+	ldr		r1,	=(B4|B5)
 	str		r1, [r0]
+	# This means to disable the receiver (because this is an output)
+	# and pullup/down is disabled
 	ldr		r0, =CONF_UART0_TXD
 	ldr		r1, =0x0
 	str		r1, [r0]
 
-	# setup_clocks_for_console
+	# Setup clock domain features.
+
+	# TRM 8.1.12.2.1
+	# This register enables the domain power state transition. It controls the
+	# SW supervised clock domain state transition between ON-ACTIVE and
+	# ON-INACTIVE states. It also hold one status bit per clock input of the
+	# domain.
 	ldr		r0, =CM_WKUP_CLKSTCTRL
+	# Grab the flags as currently set.
 	ldr		r1, [r0]
+	# Change the CLKTRCTRL bits to SW_WKUP which will force a software forced
+	# wakeup transition on the domain.
 	and		r1, r1, #~0x3
 	orr		r1, #0x2
+	# Store it back into CM_WKUP_CLKSTCTRL to enable to effect.
 	str		r1, [r0]
+
+	# TRM 8.1.12.1.50
+	# This register enables the domain power state transition. It controls the
+	# SW supervised clock domain state transition between ON-ACTIVE and
+	# ON-INACTIVE states. It also hold one status bit per clock input of the
+	# domain.
 	ldr		r0, =CM_PER_L4HS_CLKSTCTRL
 	ldr		r1, [r0]
+	# Change the CLKTRCTRL bits to SW_WKUP which will force a software forced
+	# wakeup transition on the domain.
 	and		r1, #~0x3
 	orr		r1, #0x2
+	# Store it back into CM_PER_L4HS_CLKSTCTRL to enable to effect.
 	str		r1, [r0]
+
+
+	# TRM 8.1.12.46
+	# This register manages the UART0 clocks.
 	ldr		r0, =CM_WKUP_UART0_CLKCTRL
 	ldr		r1, [r0]
+	# Change MODULEMODE bits: COntrol the way mandatory clocks are maanged.
+	# Mode 0x02: Explicitly enable the module. The interface clocks may or may
+	# not be gated according to the clock domain state. Functional clocks
+	# are guaranteed to stay present. As long as in this configuration,
+	# power domain sleep transition cannot happen.
 	and		r1, #~0x3
 	orr		r1, #0x2
 	str		r1, [r0]
+
+	# TRM 8.1.12.1.? (bug in documentation. Register not described!)
 	ldr		r0, =CM_PER_UART0_CLKCTRL
 	ldr		r1, [r0]
+	# Change MODULEMODE bits: COntrol the way mandatory clocks are maanged.
+	# Mode 0x02: Explicitly enable the module. The interface clocks may or may
+	# not be gated according to the clock domain state. Functional clocks
+	# are guaranteed to stay present. As long as in this configuration,
+	# power domain sleep transition cannot happen.
 	and		r1, #~0x3
 	orr		r1, #0x2
 	str		r1, [r0]
@@ -184,7 +228,6 @@ uart_soft_reset:
 
 	# initialize UART
 	ldr		r0, =UART0_BASE
-	# 0x1a: [1] even parity, [1] enable parity, [0] 1 stop bit, [10] 7bits
 	ldr		r1, =0x1a 
 
 uart_init:
@@ -192,22 +235,51 @@ uart_init:
 	uxtb	r3, r3
 	tst		r3, #0x40
 	beq		uart_init
-	mov		r3, #0
+
+	# 19.5.1.6 IER_UART Register: Disable all possible interrupts for UART0
+	mov		r3, #0x00
+	# 0x00: [0000 0000]
+	# disable all interrupts
 	strb	r3, [r0, #0x04] @ IER_UART
-	mov		r3, #7
+
+	# 19.5.1.26 MDR1 Register:
+	mov		r3, #0x07
+	# 0x07:
+	# 	[0111] Disable the UART.
 	strb	r3, [r0, #0x20] @ MDR1
-	mvn		r3, #0x7c
+
+	# 19.5.1.13 LCR Register: configure parity, work length, DLL/DLH
+	mov		r3, #0x83
+	# 0x83: [1000 0011]
+	#	[1000] Divisor latch enable. Allows access to DLL and DLH
+	#	[0] no parity, [0] 1 stop bit, [11] 8-bits
 	strb	r3, [r0, #0x0c] @ LCR
-	mov		r3, #0
+
+	# 10.5.1.3 DLL Register: baud clock generation
+	mov		r3, #0x00
+	# 0x00: [0000 0000]
+	# [00000000] 8LSB divisor value for generation of baud clock
 	strb	r3, [r0]
+
 	strb	r3, [r0, #0x04] @ IER_UART
 	mov		r3, #3
 	strb	r3, [r0, #0x0c] @ LCR
 	strb	r3, [r0, #0x10] @ MCR
-	mov		r3, #7
+
+	# 19.5.1.9 IIR_UART Register: 
+	mov		r3, #0x07
+	# 0x07: [0000 0111]
+	#   [00011] Receiver line status error. Priority = 1
+	#	[1] No interrupt is pending
 	strb	r3, [r0, #0x08] @ IIR_UART
-	mvn		r3, #0x7c
+
+	# 19.5.1.13 LCR Register: configure parity, work length, DLL/DLH
+	mov		r3, #0x83
+	# 0x83: [1000 0011]
+	#	[1000] Divisor latch enable. Allows access to DLL and DLH
+	#	[0] no parity, [0] 1 stop bit, [11] 8-bits
 	strb	r3, [r0, #0x0c] @ LCR
+
 	uxtb	r3, r1
 	strb	r3, [r0]
 	ubfx	r1, r1, #8, #8
@@ -580,8 +652,6 @@ output_flag:
 	pop		{lr}
 	bx		lr
 
-
-# TODO: add functions for the rest of the registers. 
 
 /* ************************************* */
 /* emit a newline character */
