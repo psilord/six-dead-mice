@@ -302,9 +302,9 @@ loop_uart_wait_init:
 
 	bl		main_echo_server
 
-hlt:
 	adrl	r0, lp_hlt_string
 	bl		emit_string
+hlt:
 	b		hlt
 
 /* ************************************* */
