@@ -80,8 +80,9 @@ Set up a non-preemptive echo server over serial port.
 	# Restore sp....
 	pop		{r0}
 	mov		sp, r0
-	# Restore apsr (but throw away the value)
+	# Restore apsr
 	pop		{r0}
+	msr		apsr, r0
 	# Restore pc....
 	pop		{r0}
 	# but DON'T restore the PC to actually be the PC; we throw away its value
