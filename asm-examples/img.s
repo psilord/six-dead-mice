@@ -61,7 +61,7 @@ Set up a non-preemptive echo server over serial port.
 	# Then save pc...
 	mov		r0, pc 
 	push	{r0}
-	# Then save apsr...
+	# Then save all of the apsr...
 	mrs		r0, apsr
 	push	{r0}
 	# Then save sp...
@@ -82,7 +82,9 @@ Set up a non-preemptive echo server over serial port.
 	mov		sp, r0
 	# Restore apsr
 	pop		{r0}
-	msr		apsr, r0
+	# but ARM states I can only write these bits....
+	# DDI0403E-ARMv7-M page B5-729
+	msr		apsr_nzcvq, r0
 	# Restore pc....
 	pop		{r0}
 	# but DON'T restore the PC to actually be the PC; we throw away its value
