@@ -14,9 +14,9 @@ Set up a non-preemptive echo server over serial port.
 .equ CM_PER_L4HS_CLKSTCTRL,	0x44E0011C
 .equ CM_WKUP_UART0_CLKCTRL,	0x44E004B4
 .equ CM_PER_UART0_CLKCTRL,	0x44E0006C
+.equ UART0_BASE,			0x44E09000
 .equ UART0_SYSC,			0x44E09054
 .equ UART0_SYSS,			0x44E09058
-.equ UART0_BASE,			0x44E09000
 
 .equ B31,				(1<<31)
 .equ B30,				(1<<30)
@@ -91,6 +91,7 @@ Set up a non-preemptive echo server over serial port.
 .endm
 
 
+# Actual start of source.
 
 
 _start:
@@ -111,7 +112,8 @@ _start:
 	eors	r13, r13, r13
 	eors	r14, r14, r14
 
-	# Then set up a small stack for function calls. Stay below 6KB.
+	# Then set up a small stack for function calls. Stay below 6KB, but there
+	# is no real way to enforce that yet.
 	ldr		sp, =STACK_START
 
 	# TRM 8.1.12.1.29
@@ -181,7 +183,6 @@ _start:
 	# Store it back into CM_PER_L4HS_CLKSTCTRL to enable to effect.
 	str		r1, [r0]
 
-
 	# TRM 8.1.12.46
 	# This register manages the UART0 clocks.
 	ldr		r0, =CM_WKUP_UART0_CLKCTRL
@@ -198,7 +199,7 @@ _start:
 	# TRM 8.1.12.1.? (bug in documentation. Register not described!)
 	ldr		r0, =CM_PER_UART0_CLKCTRL
 	ldr		r1, [r0]
-	# Change MODULEMODE bits: COntrol the way mandatory clocks are maanged.
+	# Change MODULEMODE bits: Control the way mandatory clocks are maanged.
 	# Mode 0x02: Explicitly enable the module. The interface clocks may or may
 	# not be gated according to the clock domain state. Functional clocks
 	# are guaranteed to stay present. As long as in this configuration,
@@ -214,10 +215,10 @@ _start:
 	str		r1, [r0]
 	ldr		r0, =UART0_SYSS
 
-uart_soft_reset:
+loop_uart_wait_soft_reset:
 	ldr		r1, [r0]
 	ands	r1, #0x1
-	beq		uart_soft_reset
+	beq		loop_uart_wait_soft_reset
 
 	# turn off smart idle
 
@@ -230,11 +231,11 @@ uart_soft_reset:
 	ldr		r0, =UART0_BASE
 	ldr		r1, =0x1a 
 
-uart_init:
+loop_uart_wait_init:
 	ldrb	r3, [r0, #0x14] @ LSR_UART
 	uxtb	r3, r3
 	tst		r3, #0x40
-	beq		uart_init
+	beq		loop_uart_wait_init
 
 	# 19.5.1.6 IER_UART Register: Disable all possible interrupts for UART0
 	mov		r3, #0x00
@@ -298,36 +299,154 @@ uart_init:
 
 	ldr		r0, ='A'
 
-	b		main_echo_server
+	bl		main_echo_server
 
 hlt:
+	adrl	r0, lp_hlt_string
+	bl		emit_string
 	b		hlt
 
-main_echo_server:
-	bl		emit_prompt 
+/* ************************************* */
+/* An echo server and repl */
 
-echo_it:
-	/* read a character, store in r0 */
+main_echo_server:
+	push	{r4-r12, lr}
+	bl		emit_prompt 
+	adrl	r5, cmd_buf
+	adrl	r6, cmd_index
+	ldrb	r7, [r6] @ memory initialized to zero already
+
+main_read_a_char:
+	# read a character from serial port, return it in r0
 	bl		uart_readc
 	mov		r4, r0
 
-	/* emit a debug map of registers when I hit see a ESC character */
-	/* don't echo the escape back. */
+	# Emit a debug map of registers when I hit the ESC key.
+	# Don't store or echo the escape character, just consume it.
 	cmp 	r4, #0x1b
-	bne		echo_it_echo
+	bne		main_record_char
 	bl		emit_register_dump
 	bl		emit_newline
 	bl		emit_prompt 
-	b		echo_it
+	# And re-emit the buffer so I know where I was.
+	adrl	r0, cmd_buf
+	bl		string_emit
+	b		main_read_a_char
 
-echo_it_echo:
-	/* echo whatever non command character I read back to the console */
+main_record_char:
+	# First, store the character in the buffer at the index, increment it,
+	# and store the index back into memory
+	strb	r4, [r5, r7]
+	add		r7, r7, #1
+	strb	r7, [r6]
+
+	# Then, echo whatever I saw back to the console
 	mov		r0, r4
 	bl		uart_putc
 
+	# If I've reached the character limit OR see a newline, 
+	# process the buffer, and restart from the beginning.
+	# I may or maynot emit a newline depending on the character.
 	cmp		r4, #'\n'
-	bleq	emit_prompt 
-	b		echo_it
+	beq		main_do_command_no_nl
+	cmp		r7, #0xff
+	beq		main_do_command_nl
+	# command not completed, keep accumulating characters....
+	b		main_read_a_char
+
+main_do_command_nl:
+	bl		emit_newline 
+main_do_command_no_nl:
+	bl		process_command
+
+	# Now tha were done with the command, zero it out and set index to zero
+	adrl	r0, cmd_buf @ buffer addr
+	mov		r1, #0xff	@ size of buffer
+	bl		zero_buffer
+	eors	r7, r7, r7
+
+	bl		emit_prompt
+	b		main_read_a_char
+
+	pop		{r4-r12, lr}
+	bx		lr
+
+/* ************************************* */
+/* Fill a buffer in r0, whose size is r1 */
+zero_buffer:
+	push	{r4-r5, lr}
+	# index into buffer
+	eors	r4, r4, r4
+	# storing the value zero as a byte
+	eors	r5, r5, r5
+zero_buffer_loop:
+	strb	r5, [r0, r4]
+	add		r4, r4, #1
+	cmp		r4, r1
+	bne 	zero_buffer_loop
+
+	pop		{r4-r5, lr}
+	bx		lr
+
+
+/* ************************************* */
+/* Process the command sitting in cmd_buf */
+/* legal commands are:
+
+	These commands are sort of like a REPL for assembly language. It makes it
+	far easier for me to learn how to configure the machine and test how
+	things work.
+
+	Examine the word sized contents of a single address
+	x <addr>
+
+	Examine the word sized contents of a contiguous range of addresses
+	r <loaddr>-<hiaddr>
+
+	Store a byte at addr as if it is an unsigned byte pointer
+	sb <addr> <byte>
+
+	Store a half word at addr as if it is an unsigned half word pointer
+	sh <addr> <half> 
+
+	Store a word at addr as if it is an unsigned word pointer
+	sw <addr> <word> 
+
+	Perform a read-modify-write with register turning on the bits in the word
+	s <reg> <word>
+
+	Perform a read-modify-write with register turning off the bits in the word
+	c <reg> <word>
+
+	Put the unsigned value in the word into the register
+	v <reg> <word>
+
+	Dereference register as an unsigned byte pointer and load the byte into reg
+	lb <reg> <addr>
+
+	Dereference register as an unsigned half pointer and load the half into reg
+	lh <reg> <addr>
+
+	Dereference register as an unsigned word pointer and load the word into reg
+	lw <reg> <addr>
+*/
+	
+process_command:
+	push	{r4-r12,lr}
+
+	# TODO: Remove all whitespace at start and end of command.
+
+	# Explain what we are about to process
+	adrl	r0, lp_processing
+	bl		string_emit
+	adrl	r0, cmd_buf
+	bl		string_emit
+	# TODO: And emit a newline, once I chomp the command.
+
+	# TODO now do the command!
+
+	pop		{r4-r12,lr}
+	bx		lr
 
 
 /* ************************************* */
@@ -601,8 +720,8 @@ emit_apsr_flags:
 	# Emit Aa: Imprecise data abort flag
 	mov		r0, r4
 	ldr		r1, =B8
-	mov		r2, #'E'
-	mov		r3, #'e'
+	mov		r2, #'A'
+	mov		r3, #'a'
 	bl		emit_flag
 
 	# Emit Ii: IRQ disable flag
@@ -726,6 +845,10 @@ is_line_ready_read:
 /* Hrm, this is in sore need of a data segment and a linker! These things
 	must be aligned to 4 bytes, too, if instructions come after it.
 */
+lp_hlt_string: 
+	.asciz "Halted."
+lp_processing:
+	.asciz	"Processing: "
 lp_prompt_string: 
 	.asciz "SDM v0.1 > "
 hex_map:
@@ -774,7 +897,7 @@ string_apsr_flags:
 
 # Data driven tables to dump out simple APSR flags to reduce code.
 apsr_simple_flag_number:
-	.byte 0x0b @ 11
+	.byte 0x0b @ number 11
 
 apsr_simple_flag_values:
 	.ascii "NnZzCcVvQqJjEeAaIiFfTt"
@@ -784,7 +907,13 @@ apsr_simple_flag_positions:
 	# flags:         Nn  Zz  Cc  Vv  Qq  Jj  Ee   Aa  Ii  Ff  Tt
 	.byte 0x1f, 0x1e, 0x1d, 0x1c, 0x1b, 0x18, 0x09, 0x08, 0x07, 0x06, 0x05
 
-
+# index and space to store a 256 byte repl command terminated by newline.
+cmd_index:
+	.byte 0x00
+cmd_buf:
+	.space 256, 0x00
+	# to stop any runaway string emitting...
+	.byte 0x00
 
 
 
