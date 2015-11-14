@@ -217,11 +217,10 @@ _start:
 
 loop_uart_wait_soft_reset:
 	ldr		r1, [r0]
-	ands	r1, #0x1
+	ands	r1, r1, #0x1
 	beq		loop_uart_wait_soft_reset
 
 	# turn off smart idle
-
 	ldr		r0, =UART0_SYSC
 	ldr		r1, [r0]
 	orr		r1, #(0x1 << 0x3)
@@ -233,8 +232,7 @@ loop_uart_wait_soft_reset:
 
 loop_uart_wait_init:
 	ldrb	r3, [r0, #0x14] @ LSR_UART
-	uxtb	r3, r3
-	tst		r3, #0x40
+	ands	r3, r3, #0x40
 	beq		loop_uart_wait_init
 
 	# 19.5.1.6 IER_UART Register: Disable all possible interrupts for UART0
@@ -391,7 +389,7 @@ zero_buffer_loop:
 
 /* ************************************* */
 /* Process the command sitting in cmd_buf */
-/* legal commands are:
+/* legal repl commands are:
 
 	These commands are sort of like a REPL for assembly language. It makes it
 	far easier for me to learn how to configure the machine and test how
@@ -429,6 +427,10 @@ zero_buffer_loop:
 
 	Dereference register as an unsigned word pointer and load the word into reg
 	lw <reg> <addr>
+
+	Wait (forever) until the bits in word are set in the register.
+	Used for things like determining if an asynchronous module reset is done.
+	w <reg> <word>
 */
 	
 process_command:
@@ -801,8 +803,7 @@ uart_putc:
 
 is_line_ready_write:
 	ldrb	r5, [r4, #20]
-	uxtb	r5, r5
-	tst		r5, #32
+	ands	r5, r5, #32
 	beq		is_line_ready_write
 
 	/* Yup, so emit the character. */
@@ -821,8 +822,7 @@ uart_readc:
 
 is_line_ready_read:
 	ldrb	r5, [r4, #20]
-	uxtb	r5, r5
-	tst		r5, #1
+	ands	r5, r5, #0x01
 	beq		is_line_ready_read
 
 	/* Yup, so read and zero extend the byte character into r0. */
