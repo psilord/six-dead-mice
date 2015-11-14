@@ -5,7 +5,7 @@ img: img.o
 	objdump -D -b binary -marm img > img.lst
 
 img.o: img.s
-	as img.s -o img.o
+	as --warn img.s -o img.o
 
 cold-boot: all
 	sudo /home/psilord/code/six-dead-mice/tools/bbb_ctrl --boot-spio-send-kernel img
