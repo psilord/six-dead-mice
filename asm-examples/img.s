@@ -8,15 +8,15 @@ Set up a non-preemptive echo server over serial port.
 .equ CM_PER_GPIO1_CLKCTRL,	0x44e000AC
 .equ GPIO1_OE,				0x4804C134
 .equ GPIO1_SETDATAOUT,		0x4804C194
-.equ CONF_UART0_RXD,		0x44E10970
-.equ CONF_UART0_TXD,		0x44E10974
-.equ CM_WKUP_CLKSTCTRL,		0x44E00400
-.equ CM_PER_L4HS_CLKSTCTRL,	0x44E0011C
-.equ CM_WKUP_UART0_CLKCTRL,	0x44E004B4
 .equ CM_PER_UART0_CLKCTRL,	0x44E0006C
+.equ CM_PER_L4HS_CLKSTCTRL,	0x44E0011C
+.equ CM_WKUP_CLKSTCTRL,		0x44E00400
+.equ CM_WKUP_UART0_CLKCTRL,	0x44E004B4
 .equ UART0_BASE,			0x44E09000
 .equ UART0_SYSC,			0x44E09054
 .equ UART0_SYSS,			0x44E09058
+.equ CONF_UART0_RXD,		0x44E10970
+.equ CONF_UART0_TXD,		0x44E10974
 
 .equ B31,				(1<<31)
 .equ B30,				(1<<30)
@@ -93,6 +93,9 @@ Set up a non-preemptive echo server over serial port.
 	pop 	{r0-r12,r14}
 .endm
 
+
+
+
 #
 # Actual start of source. No stack, or anythins else, is set up.
 #
@@ -118,8 +121,45 @@ _start:
 	# is no real way to enforce that yet.
 	ldr		sp, =STACK_START
 
-	# TRM 8.1.12.1.29
-	# set clock for GPIO1 (for the on board LEDs)
+	bl		f_init_gpio1
+
+	# TRM 25.3.4.2.2.2
+	# logical 1 at position 21 turns on the led0, 
+	ldr		r0, =GPIO1_SETDATAOUT
+	ldr		r1, =(1<<21)
+	str		r1, [r0]
+
+	bl		f_uart_init
+
+	# TRM 25.3.4.2.2.2
+	# logical 1 at position 22 turns on the led1, 
+	ldr		r0, =GPIO1_SETDATAOUT
+	ldr		r1, =(1<<22)
+	str		r1, [r0]
+
+	# Start the main program...
+	bl		f_main
+
+	bl		f_halt_cpu
+# End of _start code.
+
+
+
+
+
+
+
+# 
+# Everything below here are actual functions that preserve arguments, etc.
+#
+
+/* ************************************* */
+/* Initialize GPIO1. It takes no arguments. */
+f_init_gpio1:
+	push	{lr}
+
+	# trm 8.1.12.1.29
+	# set clock for gpio1 (for the on board leds)
 	ldr		r0, =CM_PER_GPIO1_CLKCTRL
 	ldr		r1, =0x40002
 	str		r1, [r0]
@@ -133,11 +173,13 @@ _start:
 	bic		r1, r1, #(0xf<<21)
 	str		r1, [r0]
 
-	# TRM 25.3.4.2.2.2
-	# logical 1 turns on the led0, 
-	ldr		r0, =GPIO1_SETDATAOUT
-	ldr		r1, =(1<<21)
-	str		r1, [r0]
+	pop	{lr}
+	bx	lr
+
+/* ************************************* */
+/* Initialize UART0. It takes no arguments. */
+f_uart_init:
+	push	{lr}
 
 	# Adjust multiplexer pin configurations for the RXD/TXD UART module pins.
 	# TRM 9.3.1.49
@@ -163,6 +205,7 @@ _start:
 	# domain.
 	ldr		r0, =CM_WKUP_CLKSTCTRL
 	# Grab the flags as currently set.
+	# NOTE: Why is the clock domain for UART0 already enabled?
 	ldr		r1, [r0]
 	# Change the CLKTRCTRL bits to SW_WKUP which will force a software forced
 	# wakeup transition on the domain.
@@ -217,10 +260,10 @@ _start:
 	str		r1, [r0]
 	ldr		r0, =UART0_SYSS
 
-loop_uart_wait_soft_reset:
+fb_loop_uart_wait_soft_reset:
 	ldr		r1, [r0]
 	ands	r1, r1, #0x1
-	beq		loop_uart_wait_soft_reset
+	beq		fb_loop_uart_wait_soft_reset
 
 	# turn off smart idle
 	ldr		r0, =UART0_SYSC
@@ -232,10 +275,10 @@ loop_uart_wait_soft_reset:
 	ldr		r0, =UART0_BASE
 	ldr		r1, =0x1a 
 
-loop_uart_wait_init:
+fb_loop_uart_wait_init:
 	ldrb	r3, [r0, #0x14] @ LSR_UART
 	ands	r3, r3, #0x40
-	beq		loop_uart_wait_init
+	beq		fb_loop_uart_wait_init
 
 	# 19.5.1.6 IER_UART Register: Disable all possible interrupts for UART0
 	mov		r3, #0x00
@@ -280,9 +323,10 @@ loop_uart_wait_init:
 	#	[1000] Divisor latch enable. Allows access to DLL and DLH
 	#	[0] no parity, [0] 1 stop bit, [11] 8-bits
 	strb	r3, [r0, #0x0c] @ LCR
-
 	uxtb	r3, r1
 	strb	r3, [r0]
+
+	# TODO: Detail what the rest of this does.
 	ubfx	r1, r1, #8, #8
 	strb	r1, [r0, #0x04] @ IER_UART
 	mov		r3, #3
@@ -290,26 +334,12 @@ loop_uart_wait_init:
 	mov		r3, #0
 	strb	r3, [r0, #0x20] @ MDR1
 
-	/* turn on second led */
-	ldr		r2, =GPIO1_SETDATAOUT
-	ldr		r1, =(1<<22)
-	str		r1, [r2]
-
-	# Start the main program...
-	bl		f_main
-
-	bl		f_halt_cpu
-
-
-# 
-# Everything below here are actual functions that preserve arguments, etc.
-#
-
+	pop		{lr}
+	bx		lr
 
 
 /* ************************************* */
 /* An echo server and repl */
-
 f_main:
 	push	{r4-r12, lr}
 	bl		f_emit_prompt 
@@ -324,16 +354,34 @@ fb_main_loop_read_a_char:
 	bl		f_uart_readc
 	mov		r4, r0
 
-	# Emit a debug map of registers when I hit the ESC key.
-	# Don't store or echo the escape character, just consume it.
-	cmp 	r4, #0x1b
-	bne		fb_main_record_char
-	bl		f_emit_register_dump
-	bl		f_emit_newline
-	bl		f_emit_prompt 
-	# And re-emit the buffer so I know where I was.
-	adrl	r0, cmd_buf
-	bl		f_string_emit
+	# If I see a DEL (0x7f) or a ctrl-H (0x08), move the buffer index back
+	# one and delete a character if applicable.
+	cmp 	r4, #0x7f
+	beq		fb_delete_char
+	cmp		r4, #0x08
+	beq		fb_delete_char
+	# Hrm, it isn't a backspace-like key, so process it like normal.
+	b		fb_main_record_char
+fb_delete_char:
+	# It is a backspace-like key, so backup
+	# First, test to see if we are at index zero, if so, do nothing, absorb the
+	# key, and read another char
+	cmp		r7, #0
+	beq		fb_main_loop_read_a_char
+	# else we have some characters in the buffer, so back up and delete one.
+	sub		r7, r7, #1
+	# and write a zero there.
+	eors	r0, r0, r0
+	strb	r0, [r5, r7]
+	# HACK! And then backspace, emit a space, then backspace again, to
+	# tell the host that I want to delete a character. How terrible. Well,
+	# good enough for now....
+	mov		r0, #0x08
+	bl		f_uart_putc
+	mov		r0, #' '
+	bl		f_uart_putc
+	mov		r0, #0x08
+	bl		f_uart_putc
 	b		fb_main_loop_read_a_char
 
 fb_main_record_char:
@@ -401,7 +449,10 @@ fb_zero_buffer_loop:
 	far easier for me to learn how to configure the machine and test how
 	things work.
 
-	Halt all activities and halt the processor. No more processing at all.
+	Emit a usage.
+	'?'
+
+	Halt all activities and halt the processor.
 	'h'
 
 	Test scan an address word value and emit its value
@@ -428,19 +479,39 @@ fb_zero_buffer_loop:
 		word aligned hiaddr
 	'xw 0xLLLLLLLL:0xHHHHHHHH'
 
+	Dump registers.
+	'd'
+
+	Store an unsigned byte at aligned addr as if it is an unsigned byte ptr
+	'sb 0xNNNNNNNN 0x000000VV'
+
+	Store an unsigned hword at aligned addr as if it is an unsigned hword ptr
+	'sh 0xNNNNNNNN 0x0000VVVV'
+
+	Store an unsigned word at aligned addr as if it is an unsigned word ptr
+	'sw 0xNNNNNNNN 0xVVVVVVVV'
+
+	Perform a read-modify-write of value at address turning on the bits in word
+	First, load the value from address 0xNNNNNNNN, then clear the bits
+	0xCCCCCCCC, then set the bits 0xSSSSSSSS, then write the result back to
+	0xNNNNNNNN
+	Example:
+	m 0xNNNNNNNN c 0xCCCCCCCC s 0xSSSSSSSS
 
 
-	Place the unsigned value in the word into the register
-	v <reg> <word>
 
-	Store an unsigned  word at aligned addr as if it is an unsigned word ptr
-	sw <addr> <word> 
 
 	Perform a read-modify-write with register turning on the bits in the word
 	rs <reg> <word>
 
 	Perform a read-modify-write with register turning off the bits in the word
 	rc <reg> <word>
+
+	Wait (forever) until the bits in word are set in the memory location
+	Used for things like determining if an asynchronous module reset is done.
+	w 0xNNNNNNNN 0xVVVVVVVV
+
+	might not need to do these:
 
 	Dereference register as an unsigned byte pointer and load the byte into reg
 	lb <reg> <addr>
@@ -451,9 +522,8 @@ fb_zero_buffer_loop:
 	Dereference register as an unsigned word pointer and load the word into reg
 	lw <reg> <addr>
 
-	Wait (forever) until the bits in word are set in the register.
-	Used for things like determining if an asynchronous module reset is done.
-	w <reg> <word>
+	Place the unsigned value in the word into the named register
+	v <reg> <word>
 
 */
 f_process_command:
@@ -476,6 +546,12 @@ f_process_command:
 	# Switch on the command and execute it, load the first character.
 	ldrb	r5, [r4]
 
+	cmp		r5, #'?'
+	bne		fb_process_command_0
+	mov		r0, r4
+	bl		f_execute_cmd_usage
+	b		fb_process_command_done
+fb_process_command_0:
 	cmp		r5, #'h'
 	bne		fb_process_command_1
 	mov		r0, r4
@@ -495,9 +571,27 @@ fb_process_command_2:
 	b		fb_process_command_done
 fb_process_command_3:
 	cmp		r5, #'v'
-	bne		fb_process_command_default
+	bne		fb_process_command_4
 	mov		r0, r4
 	bl		f_execute_cmd_v
+	b		fb_process_command_done
+fb_process_command_4:
+	cmp		r5, #'d'
+	bne		fb_process_command_5
+	mov		r0, r4
+	bl		f_execute_cmd_d
+	b		fb_process_command_done
+fb_process_command_5:
+	cmp		r5, #'s'
+	bne		fb_process_command_6
+	mov		r0, r4
+	bl		f_execute_cmd_s
+	b		fb_process_command_done
+fb_process_command_6:
+	cmp		r5, #'m'
+	bne		fb_process_command_default
+	mov		r0, r4
+	bl		f_execute_cmd_m
 	b		fb_process_command_done
 
 fb_process_command_default:
@@ -517,11 +611,32 @@ f_trim_buffer:
 	bx		lr
 
 /* ************************************* */
+/* perform the '?' command, extracted from buffer in r0 */
+f_execute_cmd_usage:
+	push	{lr}
+	adrl	r0, lp_usage_message
+	bl		f_string_emit
+	bl		f_emit_newline
+	pop		{lr}
+	bx		lr
+
+/* ************************************* */
 /* perform the 'h' command, extracted from buffer in r0 */
 f_execute_cmd_h:
 	push	{lr}
 	# this call will never return!
 	bl		f_halt_cpu
+	pop		{lr}
+	bx		lr
+
+/* ************************************* */
+/* perform the 'd' command, extracted from buffer in r0 */
+f_execute_cmd_d:
+	push	{lr}
+
+	bl		f_emit_register_dump
+	bl		f_emit_newline
+
 	pop		{lr}
 	bx		lr
 
@@ -649,7 +764,6 @@ fb_process_cmd_x_single_word:
 	# and we're done!
 	b		fb_execute_cmd_x_done
 
-
 fb_execute_cmd_x_range:
 	# Emit the range of data as specified by the width operator
 
@@ -736,11 +850,165 @@ fb_execute_cmd_x_done:
 	bx		lr
 
 
+
 /* ************************************* */
-/* Perform the 'v' command */
-f_execute_cmd_v:
-	push	{lr}
-	pop		{lr}
+/* Perform the 's[bhw]' command, extracted from buffer in r0 */
+f_execute_cmd_s:
+	push	{r4-r9, lr}
+
+	# we assume the command is perfectly formatted
+	# We denote the regex we're searching for.
+	# 's[bhw] 0xNNNNNNNN 0xVVVVVVVV'
+	# in the cmd_buffer
+
+	# start of buffer in r4
+	mov		r4, r0
+
+	# get the [bhw] specifier character so we know the width we want
+	mov		r5, r4
+	add		r5, r5, #1
+	ldrb	r8, [r5]
+
+	# set pointer to initial '0' character in r5
+	mov		r5, r4
+	add		r5, r5, #3
+
+	# Read the first addr which is either the low address or a single address
+	mov		r0, r5
+	bl		f_scan_hex_word
+	# r6 is the address to which we'll write the value
+	mov		r6, r0
+
+	# scan the value we want to set.
+	mov		r5, r4
+	add		r5, r5, #14
+	mov		r0, r5
+	bl		f_scan_hex_word
+	# r7 contains the value
+	mov		r7, r0
+
+fb_process_cmd_s_store_byte:
+	cmp		r8, #'b'
+	bne		fb_process_cmd_s_store_half
+	# Ok, we're processing a byte, ensure the low byte is the only thing in
+	# the value register.
+	uxtb	r7, r7
+	# store it in the specified address, which is byte aligned
+	strb	r7, [r6]
+	b		fb_execute_cmd_s_done
+
+fb_process_cmd_s_store_half:
+	cmp		r8, #'h'
+	bne		fb_process_cmd_s_store_word
+	# Ok, we're processing a half-word, ensure the low 16-bits is the only
+	# thing in the register.
+	uxth	r7, r7
+	# Now silently align the address to a half word
+	ldr		r0, =0xfffffffe
+	and		r6, r6, r0
+	# store it in the specified address, which is now half word aligned
+	strh	r7, [r6]
+	# and we're done!
+	b		fb_execute_cmd_s_done
+
+fb_process_cmd_s_store_word:
+	cmp		r8, #'w'
+	# TODO: Emit an error if the letter isn't [bhw], for now, just exit
+	bne		fb_process_cmd_s_done
+	# Ok, we're processing a word value, it needs no modification.
+	# Now silently align the address to a word
+	ldr		r0, =0xfffffffc
+	and		r6, r6, r0
+	# store it in the specified address, which is now word aligned
+	str		r7, [r6]
+	# and we're done!
+	b		fb_execute_cmd_s_done
+
+fb_execute_cmd_s_done:
+	pop		{r4-r9, lr}
+	bx		lr
+
+
+
+/* ************************************* */
+/* Perform the 'm' command, buffer addr in r0 */
+f_execute_cmd_m:
+	push	{r4-r9, lr}
+	# Process a command like
+	# 'm 0xNNNNNNNN c 0xCCCCCCCC s 0xSSSSSSSS'
+
+	# start of buffer in r4
+	mov		r4, r0
+
+	# locate the first address in r5
+	mov		r5, r4
+	add		r5, r5, #2
+
+	# Read the first addr which is either the low address or a single address
+	mov		r0, r5
+	bl		f_scan_hex_word
+	# r6 is the address to which we'll perform the R-M-W operation.
+	mov		r6, r0
+
+	# Now point to the clear bits value
+	mov		r5, r4
+	add		r5, r5, #15
+
+	# Read the clear bits value
+	mov		r0, r5
+	bl		f_scan_hex_word
+	# r7 is the clear bits value
+	mov		r7, r0
+
+	# Now point to the set bits value
+	mov		r5, r4
+	add		r5, r5, #28
+
+	# Read the set bits value
+	mov		r0, r5
+	bl		f_scan_hex_word
+	# r8 is the set bits value
+	mov		r8, r0
+
+	# Load the original value from the address
+	ldr		r9, [r6]
+
+	# Emit the original value we found
+	adrl	r0, lp_original_value
+	bl		f_string_emit
+	bl		f_emit_newline
+	mov		r0, r6
+	bl		f_emit_reg_value
+	adrl	r0, lp_colon
+	bl		f_string_emit
+	mov		r0, r9
+	bl		f_emit_reg_value
+	bl		f_emit_newline
+
+	# clear the bits specified
+	bic		r9, r9, r7
+
+	# Emit the value with the bits cleared
+	adrl	r0, lp_clear_bits_value
+	bl		f_string_emit
+	mov		r0, r9
+	bl		f_emit_reg_value
+	bl		f_emit_newline
+
+	# set the bits specified
+	orr		r9, r9, r8
+
+	# Emit the value with the bits set
+	adrl	r0, lp_set_bits_value
+	bl		f_string_emit
+	mov		r0, r9
+	bl		f_emit_reg_value
+	bl		f_emit_newline
+
+	# now write it back to the address
+	str		r9, [r6]
+
+	pop		{r4-r9, lr}
 	bx		lr
 
 
@@ -1243,7 +1511,9 @@ fb_uart_readc_is_line_ready_read:
 	/* TODO: we get rid of high bits to keep it in pure ascii! */
 	/* Why were there high bits here to begin with, did kermit send it? 
 		did we read it out of the serial register? WHat's up? */
-	and		r0, r0, #0x7f
+	# I got rid of it, lets see if it matters now that I've really configured
+	# kermit and whatnot....
+	#and		r0, r0, #0x7f
 
 	/* and return. */
 	pop		{r4-r5, lr}
@@ -1259,6 +1529,14 @@ f_halt_cpu:
 	bl		f_string_emit
 	bl		f_emit_newline
 
+	# Debugging. Turn on LED2 if something ever called f_halt_cpu
+	# so I can tell that it happened!
+	# TRM 25.3.4.2.2.2
+	# logical 1 at position 23 turns on the led2, 
+	ldr		r0, =GPIO1_SETDATAOUT
+	ldr		r1, =(1<<23)
+	str		r1, [r0]
+
 	# Here, we stop the CPU by forever doing nothing.
 fb_halt_cpu:
 	b		fb_halt_cpu
@@ -1270,10 +1548,18 @@ fb_halt_cpu:
 /* Hrm, this is in sore need of a data segment and a linker! These things
 	must be aligned to 4 bytes, too, if instructions come after it.
 */
+lp_usage_message:
+	.asciz "Commands: ? h xb xh xw m"
 lp_hlt_string: 
 	.asciz "CPU Halted!"
 lp_processing:
 	.asciz	"Processing: "
+lp_original_value:
+	.asciz	"Original Value: "
+lp_clear_bits_value:
+	.asciz	"With bits cleared: "
+lp_set_bits_value:
+	.asciz	"With bits set: "
 lp_unknown_cmd:
 	.asciz	"Unknown Command."
 lp_colon:
