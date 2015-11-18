@@ -2,6 +2,9 @@
 Set up a non-preemptive echo server over serial port.
 */
 
+.syntax unified
+.arm
+
 .equ EXEC_START,			0x402F0400 @ Where Execution will start.
 .equ STACK_START,			0x4030CDFC @ Where Stack will start.
 
@@ -51,7 +54,6 @@ Set up a non-preemptive echo server over serial port.
 .equ B1,				(1<<1)
 .equ B0,				(1<<0)
 
-.arm
 
 # Used for storing ALL user registers, not just the normal ones for
 # subroutines.
