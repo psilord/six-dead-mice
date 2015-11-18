@@ -1,0 +1,133 @@
+;; maybe...
+(defstruct inst
+	opcode-prefix
+	kind
+	mode
+	syntax-analyzer
+	encodings)
+
+;; When I see "add" as an opcode-prefix, then run each syntax-analyzer
+;; for all add grouped functions. Some will match and some won't.
+;; for the ones that do, inspect <q> and see if I'm in thumb mode and
+;; forced to perform a particular action, if <q> is unset, 
+;; then I decide based upon preferences. <q> in ARM mode means .n is an error
+;; and .w has no effect.
+
+(add ((kind immediate) (mode thumb))
+	(syntax
+		((add{s}{<c>}{<q>} {<Rd>} <Rn> <const>) 
+			((t1 t2 t3 t4)
+				(pref t3 t4)
+				(pref t1 t2 when (presentp <Rd>))
+				(pref t2 t1 when (not (presentp <Rd>)))))
+		((addw{<c>}{<q>} {<Rd>} <Rn> <const>) 
+			((t4))))
+
+	(encodings
+		((t1 ARMv4T ARMv5T* ARMv6 ARMv7)
+			(sub-syntax
+				(outside-it
+					(adds <Rd> <Rn> <const>))
+				(inside-it 
+					(add<c> <Rd> <Rn> <const>)))
+	
+			;; encoding
+			(lambda (<Rn> <Rd> <const>)
+				(destructure-bits 
+					((((<imm3> 3)) <const>))
+					(16-bits
+						(#2r000  3) ;; 3 bits wide
+						(#2r11 2)
+						(#2r1  1)
+						(#2r0  1)
+						(<imm3> 3) 
+						(<Rn> 3) 
+						(<Rd> 3)))))
+	
+		((t2 ARMv4T ARMv5T* ARMv6 ARMv7)
+			(sub-syntax
+				(outside-it
+					(adds <Rdn> <const>))
+				(inside-it 
+					(add<c> <Rdn> <const>)))
+	
+			;; encoding
+			(lambda (<Rdn> <imm8>)
+				(16-bits
+					(#2r001 3)
+					(#2r10 2)
+					(<Rdn> 3)
+					(<imm8> 8))))
+	
+		((t3 ARMv6T2 ARMv7)
+			(sub-syntax
+				; regular variable like i is one bit
+				(add{s}<c>.W <Rd> <Rn> <const>))
+	
+			;; encoding
+			;; a single variable is a single bit.
+			(lambda (s <Rd> <Rn> <const>)
+				(destructure-bits 
+					((((i 1) (<imm3> 3) (<imm8> 8)) <const>))
+					(32-bits
+						(16-bits
+							(#2r11110 5)
+							(i 1)
+							(#2r0 1)
+							(#2r1000 4)
+							(s 1)
+							(<Rn> 4)) ;; -> (integer 16)
+						(16-bits
+							(#2r0 1)
+							(<imm3> 3)
+							(<Rd> 4)
+							(<imm8> )))))) -> (integer 32)
+		
+		((t4 ARMv6T2 ARMv7)
+			(sub-syntax
+				; regular variable like i is one bit
+				(addw<c> <Rd> <Rn> <imm12>))
+	
+			;; encoding
+			;; a single variable is a single bit.
+			(lambda (<c> <Rd> <Rn> <const>)
+				(destructure-bits 
+					((((i 1) (<imm3> 3) (<imm8> 8)) <const>))
+					(32-bits
+						(16-bits
+							#*11110 
+							i 
+							#*1 
+							#*0000 
+							#*0 
+							<Rn> )
+						(16-bits
+							#*0 
+							<imm3> 
+							<Rd> 
+							<imm8>)))))))
+	
+
+
+(add ((kind immediate) (mode arm))
+	(syntax
+		((add{s}{<c>}{<q>} {<Rd>} <Rn> <const>) ((a1))))
+
+		((a1 ARMv4* ARMv5T* ARMv6* ARMv7)
+			(sub-syntax
+				(add{s}<c> <Rd> <Rn> <const>))
+			;; encoding
+			(lambda (<c> <Rd> <Rn> <const>)
+				(destructure-bits ((<imm12>) <const>)
+				(encoding <c> #*00 #*1 #*0100 s <Rn> <Rd> <imm12>)))))
+
+
+
+
+(add ((kind register) (mode thumb))
+(add ((kind register) (mode arm))
+(add ((kind register-shifted-register) (mode arm))
+(add ((kind sp-plus-immediate) (mode any))
+(add ((kind sp-plus-register) (mode thumb))
+(add ((kind sp-plus-register) (mode arm))
+
