@@ -21,4 +21,5 @@
                 (:file "D")
                 (:file "E-classes")
                 (:file "E-interpreter")
+                (:file "arm-assem")
                 (:file "six-dead-mice")))
