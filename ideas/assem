@@ -1,5 +1,5 @@
 ;; maybe...
-(defstruct inst-def
+(defstruct instdef
 	opcode-prefix
 	kind
 	mode
