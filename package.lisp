@@ -22,3 +22,7 @@
 ;; Package holding Language E experiment
 (defpackage #:lang-e
   (:use #:cl))
+
+;; Package holding an experimental arm assembler
+(defpackage #:arm-assem
+  (:use #:cl))
