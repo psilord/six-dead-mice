@@ -3,7 +3,10 @@
 ;; Language as defined in section 3.2.2 in LiSP, ported to CL
 
 (defmethod wrong (msg &rest args)
-  (error (apply #'format t (concatenate 'string msg "~&") args)))
+  (let ((output (apply #'format nil (concatenate 'string msg "~&") args)))
+    (format t "~A" output)
+    (finish-output)
+    (error output)))
 
 ;; Most generic types.
 (defmethod invoke (f v* r k)
@@ -64,6 +67,9 @@
      (evaluate-block (cadr e) (cddr e) r k))
     ((eq (car e) 'return-from)
      (evaluate-return-from (cadr e) (caddr e) r k))
+    ;; Unwind-protect
+    ((eq (car e) 'unwind-protect)
+     (evaluate-unwind-protect (cadr e) (cddr e) r k))
     (t
      ;; everything else is a function application
      (evaluate-application (car e) (cdr e) r k))))
@@ -223,13 +229,28 @@
       (catch-lookup (k k) tag kk)))
 
 (defmethod resume ((k throwing-continuation) v)
-  (dump-cont k) ;; debugging.
-  (resume (cont k) v))
+  ;; Fixed to take into account unwind-protect
+  ;;(resume (cont k) v))
+  (unwind (k k) v (cont k)))
+
+;; TODO: This is broken when the throw is to an unknown tag
+;; So catch/throw can support support unwind-protect
+(defmethod unwind ((k unwind-protect-continuation) v target)
+  (evaluate-begin (cleanup k)
+                  (r k)
+                  (make-unwind-continuation (k k) v target)))
+
+;; To support unwind-protect.
+(defmethod resume ((k unwind-continuation) value)
+  (unwind (k k) (value k) (target k)))
 
 
 ;; Block methods
 (defun evaluate-block (label body r k)
   (let ((k (make-block-continuation k label)))
+    ;; The block-env object holds the lexical scope of the block. It
+    ;; associates the label with the continuation that represents the
+    ;; future value of the block.
     (evaluate-begin body (make-block-env r label k) k)))
 
 (defmethod resume ((k block-continuation) v)
@@ -242,7 +263,14 @@
 (defmethod resume ((k return-from-continuation) v)
   (block-lookup (r k) (label k) (k k) v))
 
+;; TODO: This is suppose to be different according to the book, but both
+;; the book and the downloaded source code fail to show a difference. So, I
+;; need to check if this is actually correct or if I need to add code here.
 (defmethod block-lookup ((r block-env) n k v)
+  ;; Modofied to support unwind-protect
+  ;;(if (eql n (name r))
+  ;;    (unwind k v (cont r))
+  ;;    (block-lookup (others r) n k v)))
   (if (eql n (name r))
       (unwind k v (cont r))
       (block-lookup (others r) n k v)))
@@ -263,6 +291,22 @@
 
 (defmethod unwind ((k bottom-continuation) v ktarget)
   (wrong "Onselete continuation: k = ~A, v = ~A, ktarget = ~A" k v ktarget))
+
+
+;; Unwind-protect methods (TODO: Broken, also probably with respect to
+;; catch/block too.)
+(defun evaluate-unwind-protect (form cleanup r k)
+  (evaluate form r (make-unwind-protect-continuation k cleanup r)))
+
+(defmethod resume ((k unwind-protect-continuation) v)
+  (evaluate-begin (cleanup k) (r k) (make-protect-return-continuation (k k) v)))
+
+(defmethod resume ((k protect-return-continuation) v)
+  (declare (ignore v)) ;; TODO: Figure out if this is true...
+  (resume (k k) (value k)))
+
+
+
 
 
 
@@ -309,6 +353,7 @@
   (flet ((gen-primitive-function (f a)
            (lambda (v* r k)
              (declare (ignorable r))
+             ;;(inspect k)
              (cond
                ((eq a 'variable-arity)
                 (resume k (apply f v*)))
@@ -325,11 +370,25 @@
      ;; a simple environment for testing
      (extend-env
       (make-null-env)
-      (list 'cons 'car 'cdr '+ 'call/cc)
+      (list 'cons 'car 'cdr '+ '- '/ '* '< '> '= '/= 'format 'call/cc)
       (list (make-primitive 'cons (gen-primitive-function #'cons 2))
             (make-primitive 'car (gen-primitive-function #'car 1))
             (make-primitive 'cdr (gen-primitive-function #'cdr 1))
             (make-primitive '+ (gen-primitive-function #'+ 'variable-arity))
+            (make-primitive '- (gen-primitive-function #'- 'variable-arity))
+            (make-primitive '/ (gen-primitive-function #'/ 'variable-arity))
+            (make-primitive '* (gen-primitive-function #'* 'variable-arity))
+            (make-primitive '< (gen-primitive-function #'< 'variable-arity))
+            (make-primitive '> (gen-primitive-function #'> 'variable-arity))
+            (make-primitive '= (gen-primitive-function #'= 'variable-arity))
+            (make-primitive '/= (gen-primitive-function #'/= 'variable-arity))
+
+            (make-primitive
+             'format
+             (gen-primitive-function (lambda (str fmt &rest args)
+                                       (apply #'format str fmt args)
+                                       (finish-output))
+                                     'variable-arity))
             (make-primitive
              'call/cc
              (lambda (v* r k)

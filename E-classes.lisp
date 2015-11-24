@@ -190,6 +190,44 @@
 (defun return-from-continuation-p (o)
   (subtypep 'return-from-continuation (type-of o)))
 
+;; Unwind-protect continuation
+(defclass unwind-protect-continuation (continuation)
+  ((%cleanup :initarg :cleanup
+             :accessor cleanup)
+   (%r :initarg :r
+       :accessor r)))
+
+(defun make-unwind-protect-continuation (k cleanup r)
+  (make-instance 'unwind-protect-continuation :k k :cleanup cleanup :r r))
+
+(defun unwind-protect-continuation-p (o)
+  (subtypep 'unwind-protect-continuation (type-of o)))
+
+;; Protect-Return continuation (second half of unwind-protect)
+(defclass protect-return-continuation (continuation)
+  ((%value :initarg :value
+           :accessor value)))
+
+(defun make-protect-return-continuation (k value)
+  (make-instance 'protect-return-continuation :k k :value value))
+
+(defun protect-return-continuation-p (o)
+  (subtypep 'protect-return-continuation (type-of o)))
+
+
+;; Unwind continuation
+(defclass unwind-continuation (continuation)
+  ((%value :initarg :value
+           :accessor value)
+   (%target :initarg :target
+            :accessor target)))
+
+(defun make-unwind-continuation (k value target)
+  (make-instance 'unwind-continuation :k k :value value :target target))
+
+(defun unwind-continuation-p (o)
+  (subtypep 'unwind-continuation (type-of o)))
+
 
 
 ;; Bottom Continuation (passed to the evaluator)
